@@ -5,25 +5,25 @@
         <img src="@/assets/cau_logo.png" alt="CAU Logo" class="logo" />
       </div>
       <div class="title-section">
-        <h1>è‚‰è‹è“‰æ’­ç§ç›‘æµ‹ç½‘é¡µç«¯</h1>
+        <h1>ÈâÜÊÈØ²¥ÖÖ¼à²âÍøÒ³¶Ë</h1>
       </div>
       <div class="header-actions">
-        <button class="action-btn" @click="toggleRun">{{ isRunning ? 'åœæ­¢æ’­ç§' : 'å¼€å§‹æ’­ç§' }}</button>
-        <button class="action-btn" @click="toggleTrend">è¶‹åŠ¿è¡¨æ ¼</button>
-        <button class="action-btn" @click="goHistory">å†å²æ•°æ®</button>
+        <button class="action-btn" @click="toggleRun">{{ isRunning ? 'Í£Ö¹²¥ÖÖ' : '¿ªÊ¼²¥ÖÖ' }}</button>
+        <button class="action-btn" @click="toggleTrend">Ç÷ÊÆ±í¸ñ</button>
+        <button class="action-btn" @click="goHistory">ÀúÊ·Êı¾İ</button>
       </div>
     </header>
 
     <main class="main-content">
-      <!-- å·¦ä¾§æ•°æ®é¢æ¿ -->
+      <!-- ×ó²àÊı¾İÃæ°å -->
       <div class="left-panel">
         <div class="data-grid">
           <template v-if="!showTrendTable">
-            <div class="data-row"><label>é€šé“1æ’­ç§é‡ï¼š</label><div class="value-box">{{ sensorData.channel1.toFixed(1) }}</div><span class="unit">g</span></div>
-            <div class="data-row"><label>é€šé“2æ’­ç§é‡ï¼š</label><div class="value-box">{{ sensorData.channel2.toFixed(1) }}</div><span class="unit">g</span></div>
-            <div class="data-row"><label>é€šé“3æ’­ç§é‡ï¼š</label><div class="value-box">{{ sensorData.channel3.toFixed(1) }}</div><span class="unit">g</span></div>
-            <div class="data-row"><label>é€šé“4æ’­ç§é‡ï¼š</label><div class="value-box">{{ sensorData.channel4.toFixed(1) }}</div><span class="unit">g</span></div>
-            <div class="data-row"><label>é€šé“5æ’­ç§é‡ï¼š</label><div class="value-box">{{ sensorData.channel5.toFixed(1) }}</div><span class="unit">g</span></div>
+            <div class="data-row"><label>Í¨µÀ1²¥ÖÖÁ¿£º</label><div class="value-box">{{ sensorData.channel1.toFixed(1) }}</div><span class="unit">g</span></div>
+            <div class="data-row"><label>Í¨µÀ2²¥ÖÖÁ¿£º</label><div class="value-box">{{ sensorData.channel2.toFixed(1) }}</div><span class="unit">g</span></div>
+            <div class="data-row"><label>Í¨µÀ3²¥ÖÖÁ¿£º</label><div class="value-box">{{ sensorData.channel3.toFixed(1) }}</div><span class="unit">g</span></div>
+            <div class="data-row"><label>Í¨µÀ4²¥ÖÖÁ¿£º</label><div class="value-box">{{ sensorData.channel4.toFixed(1) }}</div><span class="unit">g</span></div>
+            <div class="data-row"><label>Í¨µÀ5²¥ÖÖÁ¿£º</label><div class="value-box">{{ sensorData.channel5.toFixed(1) }}</div><span class="unit">g</span></div>
           </template>
           <template v-else>
             <div class="data-row full-width">
@@ -34,34 +34,34 @@
             </div>
           </template>
 
-          <div class="data-row"><label>æ€»æ’­ç§é‡ï¼š</label><div class="value-box">{{ totalSowing }}</div><span class="unit">g</span></div>
-          <div class="data-row"><label>ä½œä¸šé‡Œç¨‹ï¼š</label><div class="value-box">{{ sensorData.mileage.toFixed(1) }}</div><span class="unit">m</span></div>
-          <div class="data-row"><label>æ¼æ’­é‡Œç¨‹ï¼š</label><div class="value-box">{{ sensorData.missedMileage.toFixed(1) }}</div><span class="unit">m</span></div>
-          <div class="data-row single-row"><label>ä½œä¸šé€Ÿåº¦ï¼š</label><div class="value-box">{{ sensorData.speed.toFixed(1) }}</div><span class="unit">km/h</span></div>
+          <div class="data-row"><label>×Ü²¥ÖÖÁ¿£º</label><div class="value-box">{{ totalSowing }}</div><span class="unit">g</span></div>
+          <div class="data-row"><label>×÷ÒµÀï³Ì£º</label><div class="value-box">{{ sensorData.mileage.toFixed(1) }}</div><span class="unit">m</span></div>
+          <div class="data-row"><label>Â©²¥Àï³Ì£º</label><div class="value-box">{{ sensorData.missedMileage.toFixed(1) }}</div><span class="unit">m</span></div>
+          <div class="data-row single-row"><label>×÷ÒµËÙ¶È£º</label><div class="value-box">{{ sensorData.speed.toFixed(1) }}</div><span class="unit">km/h</span></div>
         </div>
 
         <div class="indicators-area">
           <div class="indicator-item">
-            <span>å µå¡æŒ‡ç¤ºç¯</span>
+            <span>¶ÂÈûÖ¸Ê¾µÆ</span>
             <svg class="bulb-icon" :class="{ active: status.blocked }" viewBox="0 0 24 24"><path fill="currentColor" d="M9,21c0,0.55 0.45,1 1,1h4c0.55,0 1,-0.45 1,-1v-1H9V21z M12,2C8.13,2 5,5.13 5,9c0,2.38 1.19,4.47 3,5.74V17c0,0.55 0.45,1 1,1h6c0.55,0 1,-0.45 1,-1v-2.26c1.81,-1.27 3,-3.36 3,-5.74C19,5.13 15.87,2 12,2z"/></svg>
           </div>
           <div class="indicator-item">
-            <span>ç¼ºç§æŒ‡ç¤ºç¯</span>
+            <span>È±ÖÖÖ¸Ê¾µÆ</span>
             <svg class="bulb-icon" :class="{ active: status.shortage }" viewBox="0 0 24 24"><path fill="currentColor" d="M9,21c0,0.55 0.45,1 1,1h4c0.55,0 1,-0.45 1,-1v-1H9V21z M12,2C8.13,2 5,5.13 5,9c0,2.38 1.19,4.47 3,5.74V17c0,0.55 0.45,1 1,1h6c0.55,0 1,-0.45 1,-1v-2.26c1.81,-1.27 3,-3.36 3,-5.74C19,5.13 15.87,2 12,2z"/></svg>
           </div>
         </div>
       </div>
 
-      <!-- å³ä¾§åœ°å›¾ -->
+      <!-- ÓÒ²àµØÍ¼ -->
       <div class="right-panel">
-        <h2 class="map-title">åœ°å›¾å®šä½</h2>
+        <h2 class="map-title">µØÍ¼¶¨Î»</h2>
         <div class="coords-info">
-          <span>ç»åº¦: {{ gpsData.longitude.toFixed(6) }} E</span>
-          <span>çº¬åº¦: {{ gpsData.latitude.toFixed(6) }} N</span>
+          <span>¾­¶È: {{ gpsData.longitude.toFixed(6) }} E</span>
+          <span>Î³¶È: {{ gpsData.latitude.toFixed(6) }} N</span>
         </div>
         <div class="map-border">
           <div id="baidu-map-container"></div>
-          <button class="map-switch-btn" @click="toggleMapMode">{{ isSatelliteMode ? 'åˆ‡æ¢äºŒç»´åœ°å›¾' : 'åˆ‡æ¢å«æ˜Ÿå®æ™¯' }}</button>
+          <button class="map-switch-btn" @click="toggleMapMode">{{ isSatelliteMode ? 'ÇĞ»»¶şÎ¬µØÍ¼' : 'ÇĞ»»ÎÀĞÇÊµ¾°' }}</button>
         </div>
       </div>
     </main>
