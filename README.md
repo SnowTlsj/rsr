@@ -1,38 +1,70 @@
-# haichao
+# Seed Monitor (Vue3 + FastAPI + PostgreSQL)
 
-This template should help get you started developing with Vue 3 in Vite.
+## Quick Start (Docker Compose)
 
-## Recommended IDE Setup
+1) Copy env files
 
-[VS Code](https://code.visualstudio.com/) + [Vue (Official)](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur).
-
-## Recommended Browser Setup
-
-- Chromium-based browsers (Chrome, Edge, Brave, etc.):
-  - [Vue.js devtools](https://chromewebstore.google.com/detail/vuejs-devtools/nhdogjmejiglipccpnnnanhbledajbpd) 
-  - [Turn on Custom Object Formatter in Chrome DevTools](http://bit.ly/object-formatters)
-- Firefox:
-  - [Vue.js devtools](https://addons.mozilla.org/en-US/firefox/addon/vue-js-devtools/)
-  - [Turn on Custom Object Formatter in Firefox DevTools](https://fxdx.dev/firefox-devtools-custom-object-formatters/)
-
-## Customize configuration
-
-See [Vite Configuration Reference](https://vite.dev/config/).
-
-## Project Setup
-
-```sh
-npm install
+```bash
+cp .env.example .env
+cp frontend/.env.example frontend/.env
 ```
 
-### Compile and Hot-Reload for Development
+2) Start services
 
-```sh
-npm run dev
+```bash
+docker compose up --build
 ```
 
-### Compile and Minify for Production
+3) Run migrations
 
-```sh
-npm run build
+```bash
+docker compose exec backend alembic upgrade head
 ```
+
+Frontend: http://localhost:5173
+Backend: http://localhost:8000
+
+## Ingest Example (with token)
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/ingest" \
+  -H "Authorization: Bearer devtoken" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "ts": "2025-01-01T12:00:00Z",
+    "machine_id": "machine-001",
+    "telemetry": {
+      "seed_channels_g": [10.2, 9.8, 10.5, 9.9, 10.1],
+      "seed_total_g": 50.5,
+      "distance_m": 120.4,
+      "leak_distance_m": 1.2,
+      "speed_kmh": 4.2,
+      "alarm_blocked": false,
+      "alarm_no_seed": false
+    },
+    "gps": {
+      "lon": 116.365,
+      "lat": 40.0095,
+      "alt_m": 50.2,
+      "heading_deg": 120.0
+    }
+  }'
+```
+
+## MonitorView Usage
+
+- Click **开始播种** to create a run and open the WebSocket stream.
+- Click **停止播种** to close the stream and end the run.
+- Click **趋势表格** to toggle the channel table with sparklines.
+- Click **历史数据** to open the HistoryView.
+
+## HistoryView Usage
+
+- The left list shows runs from the last 30 days.
+- Click a run to load GPS points and draw the red trajectory on the Baidu map.
+
+## Notes
+
+- The backend keeps only the last 30 days of runs (daily cleanup task).
+- Data is partitioned by `run_id` only; tables are fixed: `runs`, `telemetry_samples`, `gps_points`.
+- Baidu Map GL is injected via `frontend/index.html` and used through `window.BMapGL`.
