@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict
 
 
 class RunStartRequest(BaseModel):
@@ -23,9 +23,7 @@ class RunStopResponse(BaseModel):
 
 
 class RunSummary(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    run_id: UUID = Field(alias="id")
+    run_id: UUID
     machine_id: str
     run_name: str
     started_at: datetime
@@ -38,6 +36,8 @@ class TelemetryPayload(BaseModel):
     distance_m: Optional[float] = None
     leak_distance_m: Optional[float] = None
     speed_kmh: Optional[float] = None
+    uniformity_index: Optional[float] = None
+    alarm_channels: Optional[List[int]] = None  # 5个通道的警报状态，会转换为 alarm_blocked
     alarm_blocked: Optional[bool] = None
     alarm_no_seed: Optional[bool] = None
 
@@ -45,8 +45,6 @@ class TelemetryPayload(BaseModel):
 class GpsPayload(BaseModel):
     lon: float
     lat: float
-    alt_m: Optional[float] = None
-    heading_deg: Optional[float] = None
 
 
 class IngestRequest(BaseModel):
@@ -67,8 +65,14 @@ class TelemetryResponse(BaseModel):
     distance_m: Optional[float] = None
     leak_distance_m: Optional[float] = None
     speed_kmh: Optional[float] = None
+    uniformity_index: Optional[float] = None
     alarm_blocked: Optional[bool] = None
     alarm_no_seed: Optional[bool] = None
+    alarm_channel1: Optional[int] = None
+    alarm_channel2: Optional[int] = None
+    alarm_channel3: Optional[int] = None
+    alarm_channel4: Optional[int] = None
+    alarm_channel5: Optional[int] = None
 
 
 class GpsResponse(BaseModel):
@@ -77,5 +81,3 @@ class GpsResponse(BaseModel):
     ts: datetime
     lon: float
     lat: float
-    alt_m: Optional[float] = None
-    heading_deg: Optional[float] = None

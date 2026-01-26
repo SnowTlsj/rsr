@@ -32,6 +32,7 @@ class Broadcaster:
     async def add_client(self, run_id: UUID, websocket: Any) -> None:
         async with self._lock:
             self._clients.setdefault(run_id, set()).add(websocket)
+            print(f"[WS] Client connected to run_id: {run_id}, total clients: {len(self._clients.get(run_id, set()))}")
 
     async def remove_client(self, run_id: UUID, websocket: Any) -> None:
         async with self._lock:
@@ -39,12 +40,15 @@ class Broadcaster:
             if not clients:
                 return
             clients.discard(websocket)
+            print(f"[WS] Client disconnected from run_id: {run_id}, remaining: {len(clients)}")
             if not clients:
                 self._clients.pop(run_id, None)
 
     async def update_telemetry(self, run_id: UUID, payload: dict[str, Any]) -> None:
         async with self._lock:
             self._latest_telemetry[run_id] = payload
+            client_count = len(self._clients.get(run_id, set()))
+            print(f"[INGEST] Telemetry for run_id: {run_id}, clients waiting: {client_count}")
 
     async def update_gps(self, run_id: UUID, payload: dict[str, Any]) -> None:
         async with self._lock:
@@ -66,12 +70,29 @@ class Broadcaster:
 
     async def telemetry_loop(self) -> None:
         interval = 1.0 / max(settings.telemetry_push_hz, 0.1)
+        heartbeat_counter = 0
         while True:
             await asyncio.sleep(interval)
+            heartbeat_counter += 1
+
+            # 获取并清除最新数据
             async with self._lock:
                 items = list(self._latest_telemetry.items())
+                self._latest_telemetry.clear()  # 清除已获取的数据，避免重复广播
+
+                # 每5秒发送心跳给所有连接的客户端
+                if heartbeat_counter >= int(5 / interval):
+                    heartbeat_counter = 0
+                    client_run_ids = list(self._clients.keys())
+
+            # 在锁外广播数据
             for run_id, payload in items:
                 await self._broadcast(run_id, {"type": "telemetry", "data": payload})
+
+            # 发送心跳
+            if heartbeat_counter == 0:
+                for run_id in client_run_ids:
+                    await self._broadcast(run_id, {"type": "heartbeat", "ts": time.time()})
 
     async def gps_loop(self) -> None:
         interval = 1.0 / max(settings.gps_push_hz, 0.1)
@@ -79,6 +100,7 @@ class Broadcaster:
             await asyncio.sleep(interval)
             async with self._lock:
                 items = list(self._latest_gps.items())
+                self._latest_gps.clear()  # 清除已获取的数据
             for run_id, payload in items:
                 await self._broadcast(run_id, {"type": "gps", "data": payload})
 
@@ -151,6 +173,26 @@ class IngestQueue:
 def build_telemetry_row(run_id: UUID, ts: datetime, telemetry: dict[str, Any]) -> dict[str, Any]:
     channels = telemetry.get("seed_channels_g") or []
     padded = list(channels) + [None] * (5 - len(channels))
+
+    # 处理 alarm_channels
+    alarm_channels = telemetry.get("alarm_channels") or []
+    alarm_padded = list(alarm_channels) + [0] * (5 - len(alarm_channels))
+
+    # 自动计算总播种量（如果没有提供）
+    seed_total_g = telemetry.get("seed_total_g")
+    if seed_total_g is None and channels:
+        seed_total_g = sum(c for c in channels if c is not None)
+
+    # 匀播指数 = 总播种量 / 总里程
+    uniformity_index = telemetry.get("uniformity_index")
+    if uniformity_index is None:
+        distance_m = telemetry.get("distance_m") or 0
+        if distance_m > 0 and seed_total_g is not None:
+            uniformity_index = seed_total_g / distance_m
+
+    # 如果任何通道有警报，设置 alarm_blocked
+    has_alarm = any(a == 1 for a in alarm_padded)
+
     return {
         "run_id": run_id,
         "ts": ts,
@@ -159,12 +201,18 @@ def build_telemetry_row(run_id: UUID, ts: datetime, telemetry: dict[str, Any]) -
         "channel3_g": padded[2],
         "channel4_g": padded[3],
         "channel5_g": padded[4],
-        "seed_total_g": telemetry.get("seed_total_g"),
+        "seed_total_g": seed_total_g,
         "distance_m": telemetry.get("distance_m"),
         "leak_distance_m": telemetry.get("leak_distance_m"),
         "speed_kmh": telemetry.get("speed_kmh"),
-        "alarm_blocked": telemetry.get("alarm_blocked"),
-        "alarm_no_seed": telemetry.get("alarm_no_seed"),
+        "uniformity_index": uniformity_index,
+        "alarm_blocked": telemetry.get("alarm_blocked") or has_alarm,
+        "alarm_no_seed": telemetry.get("alarm_no_seed") or False,
+        "alarm_channel1": alarm_padded[0],
+        "alarm_channel2": alarm_padded[1],
+        "alarm_channel3": alarm_padded[2],
+        "alarm_channel4": alarm_padded[3],
+        "alarm_channel5": alarm_padded[4],
     }
 
 
@@ -174,6 +222,4 @@ def build_gps_row(run_id: UUID, ts: datetime, gps: dict[str, Any]) -> dict[str, 
         "ts": ts,
         "lon": gps.get("lon"),
         "lat": gps.get("lat"),
-        "alt_m": gps.get("alt_m"),
-        "heading_deg": gps.get("heading_deg"),
     }

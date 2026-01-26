@@ -9,13 +9,18 @@ export interface ChannelPoint {
 
 export const useRunStore = defineStore('run', {
   state: () => ({
-    runId: null as string | null,
+    runId: (localStorage.getItem('activeRunId') || null) as string | null,
     wsStatus: 'closed' as WsStatus,
     channelBuffers: [[], [], [], [], []] as ChannelPoint[][]
   }),
   actions: {
     setRunId(runId: string | null) {
       this.runId = runId;
+      if (runId) {
+        localStorage.setItem('activeRunId', runId);
+      } else {
+        localStorage.removeItem('activeRunId');
+      }
     },
     setWsStatus(status: WsStatus) {
       this.wsStatus = status;

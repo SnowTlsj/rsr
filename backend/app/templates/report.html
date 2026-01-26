@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>播种报告</title>
+    <style>
+      body {
+        font-family: "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+        color: #000;
+        margin: 24px;
+        background: #fff;
+      }
+      h1 {
+        text-align: left;
+        margin: 0 0 12px;
+        font-size: 20px;
+      }
+      h2 {
+        font-size: 14px;
+        margin: 14px 0 8px;
+        border-bottom: 2px solid #5b9bd5;
+        padding-bottom: 6px;
+      }
+      .info-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px 12px;
+        font-size: 11px;
+      }
+      .info-item {
+        background: #f5f6f8;
+        border-radius: 6px;
+        padding: 8px 10px;
+      }
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        font-size: 11px;
+      }
+      .stat-card {
+        border: 1px solid #dbe3f4;
+        border-radius: 8px;
+        padding: 12px 10px;
+        background: #f4f8ff;
+        text-align: center;
+      }
+      .stat-card .value {
+        font-size: 16px;
+        font-weight: bold;
+        margin-top: 6px;
+      }
+      .channel-row {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .channel-badge {
+        border: 1px solid #dbe3f4;
+        border-radius: 6px;
+        padding: 6px 8px;
+        background: #f8f9fb;
+        font-size: 11px;
+        text-align: center;
+      }
+      .alarm-row {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .alarm-card {
+        border: 1px solid #f7b37a;
+        border-radius: 8px;
+        padding: 10px 12px;
+        background: #fff7ed;
+        font-size: 11px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .alarm-card .value {
+        font-weight: bold;
+        color: #f97316;
+      }
+      .gps-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px 12px;
+        font-size: 11px;
+      }
+      .gps-item {
+        background: #f5f6f8;
+        border-radius: 6px;
+        padding: 8px 10px;
+      }
+      .chart-wrap {
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 8px;
+        background: #fff;
+      }
+      .legend {
+        display: flex;
+        gap: 10px;
+        font-size: 10px;
+        margin-bottom: 6px;
+      }
+      .legend span::before {
+        content: "";
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-right: 4px;
+        background: currentColor;
+      }
+      .section {
+        margin-bottom: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>播种报告</h1>
+
+    <div class="section">
+      <h2>任务信息</h2>
+      <div class="info-grid">
+        <div class="info-item">设备编号：{{ machine_id }}</div>
+        <div class="info-item">任务名称：{{ run_name }}</div>
+        <div class="info-item">开始时间：{{ started_at }}</div>
+        <div class="info-item">结束时间：{{ ended_at }}</div>
+        <div class="info-item">作业时长：{{ duration }}</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>播种统计</h2>
+      <div class="stats-grid">
+        <div class="stat-card"><div>总播种量</div><div class="value">{{ total_seed_kg }} kg</div></div>
+        <div class="stat-card"><div>作业里程</div><div class="value">{{ total_distance_km }} km</div></div>
+        <div class="stat-card"><div>漏播里程</div><div class="value">{{ leak_distance_km }} km</div></div>
+        <div class="stat-card"><div>平均速度</div><div class="value">{{ avg_speed_kmh }} km/h</div></div>
+        <div class="stat-card"><div>匀播指数</div><div class="value">{{ uniformity_index }} g/m</div></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>各通道播种量</h2>
+      <div class="channel-row">
+        <div class="channel-badge">通道1：{{ channel1_kg }} kg</div>
+        <div class="channel-badge">通道2：{{ channel2_kg }} kg</div>
+        <div class="channel-badge">通道3：{{ channel3_kg }} kg</div>
+        <div class="channel-badge">通道4：{{ channel4_kg }} kg</div>
+        <div class="channel-badge">通道5：{{ channel5_kg }} kg</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>告警统计</h2>
+      <div class="alarm-row">
+        <div class="alarm-card"><span>堵塞告警</span><span class="value">{{ alarm_blocked_count }} 次</span></div>
+        <div class="alarm-card"><span>缺种告警</span><span class="value">{{ alarm_no_seed_count }} 次</span></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>GPS 轨迹</h2>
+      <div class="gps-grid">
+        <div class="gps-item">轨迹点数量：{{ gps_point_count }} 个</div>
+        <div class="gps-item">起始位置：{{ start_location }}</div>
+        <div class="gps-item">结束位置：{{ end_location }}</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>播种量趋势</h2>
+      <div class="chart-wrap">
+        <div class="legend">
+          {% for series in trend_series %}
+            <span style="color: {{ series.color }}">{{ series.name }}</span>
+          {% endfor %}
+        </div>
+        <svg width="700" height="180" viewBox="0 0 700 180">
+          <rect x="0" y="0" width="700" height="180" fill="#ffffff" stroke="#e5e7eb" />
+          {% for series in trend_series %}
+            <polyline fill="none" stroke="{{ series.color }}" stroke-width="2" points="{{ series.points }}"></polyline>
+          {% endfor %}
+        </svg>
+      </div>
+    </div>
+  </body>
+</html>

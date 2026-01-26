@@ -1,0 +1,148 @@
+该目录下有之前的rsr前端项目作为参考，现在我需要在云服务器上用dockercompose部署出依托该项目前后端结合的项目，项目prompt如下，请按照要求完成他。项目已经完成了一小部分，但前端ui混乱，接口不清，按钮不起作用，请在完善之后写一个标准的完整的使用文档出来，包括不部署方式以及各个配置参数以及各个接口的详细调用参数。
+
+现有目录结构：
+-bakend
+-frontend
+.env
+docker-compose.yml
+MonitorView.vue（参考用的原页面）
+
+
+请在现有仓库基础上实现一个可运行的前后端融合工程（Vue3 + Vite + TS + FastAPI + PostgreSQL），并严格遵守以下“确定性”要求。
+
+========================
+A. 总体约束（必须遵守）
+========================
+1) MonitorView.vue 的现有布局与样式必须保持一致（不得重写整体结构）。允许新增少量按钮（开始播种用于打开api接口接收数据，趋势表格把每个通道30s内的数据绘制成曲线图，历史数据用于查看30天以内的播种数据），但不得改动左侧/右侧面板布局、不得引入大型 UI 框架改变样式，删除下方的“缺种指示灯和堵塞指示灯”。
+2) 百度地图通过现有项目的 index.html 注入 BMapGL（全局变量）。前端代码只使用 window.BMapGL，不改变注入方式。
+3) 数据分区方式：使用 run_id（UUID）分区，可以直观地知道这是哪天播种的数据。禁止“每次开始播种新建物理表”。必须使用固定表：runs、telemetry_samples、gps_points。
+4) 数据保留：仅保留最近 30 天数据。后端实现每日清理任务删除过期 runs（级联删除 telemetry/gps）。
+
+========================
+B. 前端（Vue3）需求
+========================
+1) 在 MonitorView.vue 的 header 增加按钮区（位置：标题右侧或 header 内靠右）：
+   - 开始播种 / 停止播种（同一按钮切换）
+   - 趋势表格（切换通道显示模式，从瞬时数字显示切换到30s曲线显示）
+   - 历史数据（跳转到 /history，history保持和前端一样的布局，但仅仅需要此功能需要的各个组件即可）
+2) 开始播种逻辑：
+   - 调用 POST {VITE_API_BASE}/runs/start body: { machine_id: VITE_MACHINE_ID }
+   - 成功后保存 run_id（pinia store），并建立 WebSocket 连接 ws://.../ws/live?run_id=...
+   - 接收到 telemetry/gps 后立即更新 MonitorView.vue 内现有响应式数据：
+     sensorData.channel1..5, mileage, missedMileage, speed
+     status.blocked, status.shortage
+     gpsData.longitude, gpsData.latitude
+3) 停止播种逻辑：
+   - 关闭 WebSocket
+   - POST /runs/{run_id}/stop
+4) “趋势表格”按钮行为（必须按此实现，不允许大页面变换）：
+   - 默认视图：保持现有 5 行“通道1~5播种量”的数值框展示（完全照旧）
+   - 点击按钮后：仅替换“通道1~5播种量”这部分为一个表格组件 ChannelTrendTable：
+       表格每行一个通道（1~5），列至少包含：
+       - 通道名称
+       - 当前值（g）
+       - 小折线图（最近30s滚动，1秒一个点，使用 ECharts）
+     其它字段（总播种量、里程、漏播、速度、指示灯、地图）保持原样。
+   - 再次点击按钮：切回原数值框视图。
+   - 折线图数据来源：来自 WebSocket 的 telemetry，前端维护每个通道一个 ring buffer（最多30点=30s）
+   -如果当前没有播种过程，那么从上次播种数据选取最后的30s片段展示。
+5) 历史数据功能（本轮只做历史，不修改 MonitorView 其他逻辑）：
+   - 新增 vue-router（如果项目尚未使用），新增路由：
+       / -> MonitorView
+       /history -> HistoryView
+   - HistoryView 页面实现：
+       a) 左侧或顶部显示 runs 列表（调用 GET /runs?days=30&machine_id=...）
+       b) 选中某个 run 后：
+           - GET /runs/{run_id}/gps 获取所有点
+           - 在百度地图中绘制红点轨迹（优先 PointCollection；不存在则 marker 小点）
+           - 可选：显示该 run 的基础信息（开始时间/结束时间/点数）
+       c) HistoryView 不需要接入实时 WebSocket（只读历史）。
+6) 前端工程化：
+   - 增加 src/api/http.ts (axios)
+   - 增加 src/api/ws.ts（带自动重连，且可手动关闭）
+   - 使用 pinia store 保存：run_id、ws状态、通道 ring buffers
+
+========================
+C. 后端（FastAPI）需求
+========================
+1) 技术栈：
+   - FastAPI async + uvicorn
+   - SQLAlchemy 2.x async + asyncpg
+   - Alembic migrations
+2) API（路径固定）：
+   - POST /api/v1/runs/start   body:{machine_id} -> {run_id, run_name, started_at}
+   - POST /api/v1/runs/{run_id}/stop -> {run_id, ended_at}
+   - GET  /api/v1/runs?days=30&machine_id=... -> runs[]
+   - GET  /api/v1/runs/{run_id}/gps?limit=100000 -> gps_points[]
+   - GET  /api/v1/runs/{run_id}/telemetry?from=&to=&bucket=1s -> 聚合后的序列
+   - POST /api/v1/ingest  Header Authorization: Bearer INGEST_TOKEN
+       Body 标准 JSON：
+       {
+         "ts":"ISO8601",
+         "machine_id":"string",
+         "telemetry":{ seed_channels_g:[5], seed_total_g, distance_m, leak_distance_m, speed_kmh, alarm_blocked, alarm_no_seed },
+         "gps":{ lon, lat, alt_m?, heading_deg? }
+       }
+       允许 telemetry 或 gps 缺失。
+       行为：必须写入“该 machine_id 当前 active run”。若不存在 active run，返回 409。
+3) WebSocket：
+   - /ws/live?run_id=...
+   - 后端维护 run_id -> clients 的广播表
+   - ingest 入队后由 broadcaster 按频率（telemetry 5Hz、gps 1Hz）推送最新值给订阅该 run_id 的客户端
+4) 写库与自适应（必须实现）：
+   - ingest 接口只做校验与快速入队，返回 202
+   - asyncio.Queue + worker 批量写库：
+       DB_BATCH_MAX_SIZE 或 DB_BATCH_MAX_LATENCY_MS 触发一次 batch insert
+   - 队列超过 QUEUE_HIGH_WATERMARK 时启用 aggregate 背压：
+       telemetry 合并为“最后值”，gps 只保留每秒最后一条
+5) 数据库表（固定表，禁止动态建表）：
+   runs, telemetry_samples, gps_points（含外键 ON DELETE CASCADE），并建 (run_id, ts) 索引
+6) 30 天保留：
+   - 后端启动时创建后台任务，每24h执行一次：
+       DELETE FROM runs WHERE started_at < now() - interval '30 days'
+     级联删除样本数据
+7) docker-compose：
+   - db 使用 timescale/timescaledb:latest-pg16（或等价），暴露 5432
+   - backend 读取 DATABASE_URL
+   - frontend Vite 开发或构建均可，至少给出开发模式启动说明
+8) 输出 README：
+   - 启动方式（docker-compose up）
+   - Alembic 迁移
+   - ingest curl 示例（带 token）
+   - MonitorView 使用说明（开始/停止、趋势表格、历史数据）
+   - HistoryView 使用说明（选择 run 回放轨迹）
+
+========================
+D. 交付物（必须输出完整文件内容）
+========================
+- 后端 backend/ 全部文件（含 migrations）
+- 前端 frontend/ 全部文件（含 router、store、ChannelTrendTable、HistoryView）
+- docker-compose.yml
+- .env.example 与 frontend/.env.example
+- README.md
+
+请直接生成完整源码，保证按 README 操作可以启动并看到页面工作。
+
+
+二次优化：
+任务：在不破坏现有 MonitorView.vue UI 的前提下，仅新增“历史数据”和“趋势表格切换”功能。
+
+强约束（必须遵守，否则视为失败）：
+
+MonitorView.vue 的 <template> 现有 DOM 结构与 class 名称必须保持不变，不允许重排、不允许改动现有 label 文本、不允许改动现有 CSS 规则。
+只允许在 <header class="header"> 内新增一个 <div class="header-actions"> 用来放三个按钮：
+开始/停止（先保留空实现或 console.log，不影响本次）
+趋势表格（切换通道区域显示：原数值框 vs ChannelTrendTable）
+历史数据（跳转 /history）
+“趋势表格”切换必须只影响通道1~5那一块（data-grid 里前5行），其它总播种量/里程/速度/指示灯/地图都不能变化。
+历史数据页面必须是新增文件 HistoryView.vue（不要改 MonitorView 结构），用 vue-router 新增 /history 路由；MonitorView 里的“历史数据”按钮只负责 router.push。
+任何新样式必须写在新增文件或仅新增极少量 class（例如 .header-actions），禁止改动现有样式。
+所有新建/修改的源码文件必须是 UTF-8 编码；不得引入导致中文乱码的编码更改。
+输出必须是 “统一 diff patch” 格式（git diff 风格），只包含必要修改与新增文件，不要整文件重写。
+实现范围：
+
+只实现历史数据 UI：HistoryView 显示 run 列表（调用 GET /api/v1/runs?days=30），点击后在百度地图绘制轨迹点（PointCollection 优先）。
+后端若尚未实现，可先用 mock 数据/静态 JSON 适配前端结构（但文件结构要为真后端留好接口层）。
+
+
+现有疑问，一共哪些东西需要自己配置，数据库需要配置吗？各种token需要配置吗？其他参数呢？如果需要配置，应该配置到哪里？里面的machineid到底是怎样定义的？

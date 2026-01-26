@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -20,6 +20,7 @@ class Run(Base):
     run_name: Mapped[str] = mapped_column(String(128), nullable=False)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_data_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     telemetry_samples: Mapped[list["TelemetrySample"]] = relationship(
@@ -48,8 +49,14 @@ class TelemetrySample(Base):
     distance_m: Mapped[float | None] = mapped_column(Float, nullable=True)
     leak_distance_m: Mapped[float | None] = mapped_column(Float, nullable=True)
     speed_kmh: Mapped[float | None] = mapped_column(Float, nullable=True)
+    uniformity_index: Mapped[float | None] = mapped_column(Float, nullable=True)
     alarm_blocked: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     alarm_no_seed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    alarm_channel1: Mapped[int | None] = mapped_column(Integer, nullable=True, default=0)
+    alarm_channel2: Mapped[int | None] = mapped_column(Integer, nullable=True, default=0)
+    alarm_channel3: Mapped[int | None] = mapped_column(Integer, nullable=True, default=0)
+    alarm_channel4: Mapped[int | None] = mapped_column(Integer, nullable=True, default=0)
+    alarm_channel5: Mapped[int | None] = mapped_column(Integer, nullable=True, default=0)
 
     run: Mapped[Run] = relationship(back_populates="telemetry_samples")
 
@@ -65,8 +72,6 @@ class GpsPoint(Base):
 
     lon: Mapped[float] = mapped_column(Float, nullable=False)
     lat: Mapped[float] = mapped_column(Float, nullable=False)
-    alt_m: Mapped[float | None] = mapped_column(Float, nullable=True)
-    heading_deg: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     run: Mapped[Run] = relationship(back_populates="gps_points")
 

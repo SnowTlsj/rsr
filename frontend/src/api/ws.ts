@@ -10,6 +10,7 @@ export class ReconnectingWebSocket {
   private handler?: WsMessageHandler;
   private onOpen?: WsEventHandler;
   private onClose?: WsEventHandler;
+  private pingTimer: number | null = null;
 
   constructor(url: string, handler?: WsMessageHandler, onOpen?: WsEventHandler, onClose?: WsEventHandler) {
     this.url = url;
@@ -34,6 +35,10 @@ export class ReconnectingWebSocket {
     };
 
     this.ws.onclose = () => {
+      if (this.pingTimer) {
+        window.clearInterval(this.pingTimer);
+        this.pingTimer = null;
+      }
       if (this.onClose) {
         this.onClose();
       }
@@ -46,6 +51,14 @@ export class ReconnectingWebSocket {
 
     this.ws.onopen = () => {
       this.reconnectDelayMs = 1000;
+      if (this.pingTimer) {
+        window.clearInterval(this.pingTimer);
+      }
+      this.pingTimer = window.setInterval(() => {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+          this.ws.send('ping');
+        }
+      }, 20000);
       if (this.onOpen) {
         this.onOpen();
       }
@@ -54,6 +67,10 @@ export class ReconnectingWebSocket {
 
   public close() {
     this.shouldReconnect = false;
+    if (this.pingTimer) {
+      window.clearInterval(this.pingTimer);
+      this.pingTimer = null;
+    }
     if (this.ws) {
       this.ws.close();
     }
