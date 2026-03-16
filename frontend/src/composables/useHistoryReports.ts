@@ -1,6 +1,11 @@
 ﻿import { ref } from 'vue';
 import * as XLSX from 'xlsx';
 import { http } from '@/api/http';
+import {
+  HISTORY_EXPORT_GPS_LIMIT,
+  HISTORY_REPORT_GPS_LIMIT,
+  HISTORY_REPORT_TELEMETRY_BUCKET
+} from '@/constants/history';
 import type { GpsPoint, ReportData, RunSummary } from '@/types/history';
 import { extractErrorMessage, isAuthError } from '@/utils/httpError';
 
@@ -148,8 +153,8 @@ export function useHistoryReports(toast: ToastApi) {
     try {
       toast.info('正在生成报告...');
       const [gpsResponse, telemetryResponse] = await Promise.all([
-        http.get(`/runs/${run.run_id}/gps`, { params: { limit: 100000 } }),
-        http.get(`/runs/${run.run_id}/telemetry`, { params: { bucket: '5s' } })
+        http.get(`/runs/${run.run_id}/gps`, { params: { limit: HISTORY_REPORT_GPS_LIMIT } }),
+        http.get(`/runs/${run.run_id}/telemetry`, { params: { bucket: HISTORY_REPORT_TELEMETRY_BUCKET } })
       ]);
       reportRun.value = run;
       reportData.value = buildReportData(run, gpsResponse.data || [], telemetryResponse.data || []);
@@ -173,7 +178,9 @@ export function useHistoryReports(toast: ToastApi) {
 
       if (!cachedGps) {
         try {
-          const gpsResponse = await http.get(`/runs/${run.run_id}/gps`, { params: { limit: 100000 } });
+          const gpsResponse = await http.get(`/runs/${run.run_id}/gps`, {
+            params: { limit: HISTORY_EXPORT_GPS_LIMIT }
+          });
           gpsData = gpsResponse.data || [];
         } catch (requestError) {
           console.error('获取GPS数据失败', requestError);
@@ -182,7 +189,9 @@ export function useHistoryReports(toast: ToastApi) {
 
       if (!cachedTelemetry) {
         try {
-          const telemetryResponse = await http.get(`/runs/${run.run_id}/telemetry`, { params: { bucket: '5s' } });
+          const telemetryResponse = await http.get(`/runs/${run.run_id}/telemetry`, {
+            params: { bucket: HISTORY_REPORT_TELEMETRY_BUCKET }
+          });
           telemetryData = telemetryResponse.data || [];
         } catch (requestError) {
           console.error('获取播种数据失败', requestError);

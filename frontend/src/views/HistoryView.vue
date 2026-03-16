@@ -58,6 +58,7 @@ import ReportModal from '@/components/ReportModal.vue';
 import HistoryMapPanel from '@/components/history/HistoryMapPanel.vue';
 import HistoryRunsList from '@/components/history/HistoryRunsList.vue';
 import { http } from '@/api/http';
+import { HISTORY_DAYS, HISTORY_MAP_LIMIT, HISTORY_MAP_TARGET_POINTS } from '@/constants/history';
 import { useHistoryMap } from '@/composables/useHistoryMap';
 import { useHistoryReports } from '@/composables/useHistoryReports';
 import { useToast } from '@/composables/useToast';
@@ -121,7 +122,7 @@ const loadRuns = async () => {
   loading.value = true;
   loadError.value = '';
   try {
-    const response = await http.get('/runs', { params: { days: 30 } });
+    const response = await http.get('/runs', { params: { days: HISTORY_DAYS } });
     runs.value = response.data || [];
     if (runs.value.length === 0) {
       info('暂无历史记录');
@@ -139,12 +140,12 @@ const selectRun = async (runId: string) => {
   selectedRun.value = runs.value.find((run) => run.run_id === runId) || null;
   mapLoading.value = true;
   try {
-    const response = await http.get(`/runs/${runId}/gps`, { params: { limit: 10000, target_points: 3000 } });
+    const response = await http.get(`/runs/${runId}/gps`, {
+      params: { limit: HISTORY_MAP_LIMIT, target_points: HISTORY_MAP_TARGET_POINTS }
+    });
     gpsPoints.value = response.data || [];
     if (gpsPoints.value.length === 0) {
       warning('该任务暂无GPS轨迹数据');
-    } else {
-      success(`加载了 ${gpsPoints.value.length} 个轨迹点`, 2000);
     }
     renderPath();
   } catch (requestError) {

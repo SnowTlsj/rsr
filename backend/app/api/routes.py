@@ -206,20 +206,6 @@ async def start_run(
     _auth: None = Depends(require_admin_auth),
 ):
     _ = payload
-    existing_run_id = await _get_active_run_id(session)
-    if existing_run_id:
-        # 返回现有活跃任务
-        stmt = select(Run).where(Run.id == existing_run_id)
-        result = await session.execute(stmt)
-        existing_run = result.scalar_one()
-        logger.info("Active run already exists, returning run_id=%s", existing_run_id)
-        return RunStartResponse(
-            run_id=existing_run.id,
-            run_name=existing_run.run_name,
-            started_at=existing_run.started_at
-        )
-
-    # 创建新任务
     now = datetime.now(timezone.utc)
     run = Run(
         run_name=f"Run {now.strftime('%Y%m%d-%H%M%S')}",
@@ -371,7 +357,7 @@ async def get_telemetry(
     run_id: UUID,
     from_ts: Optional[datetime] = Query(None, alias="from"),
     to_ts: Optional[datetime] = Query(None, alias="to"),
-    bucket: str = Query("5s"),
+    bucket: str = Query(f"{settings.telemetry_history_bucket_seconds}s"),
     session: AsyncSession = Depends(get_session),
     _auth: None = Depends(require_admin_auth),
 ):

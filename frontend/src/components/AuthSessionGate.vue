@@ -31,11 +31,15 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { useAuthStore } from '@/stores/authStore';
 
 const authStore = useAuthStore();
 const token = ref('');
+const handleAuthExpired = () => {
+  authStore.authenticated = false;
+  authStore.error = '管理会话已失效，请重新输入令牌';
+};
 
 const submit = async () => {
   if (!token.value) return;
@@ -46,7 +50,12 @@ const submit = async () => {
 };
 
 onMounted(async () => {
+  window.addEventListener('rsr-auth-expired', handleAuthExpired);
   await authStore.checkSession();
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('rsr-auth-expired', handleAuthExpired);
 });
 </script>
 

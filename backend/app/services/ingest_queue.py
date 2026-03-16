@@ -213,7 +213,15 @@ class IngestQueue:
         telemetry_rows: list[dict[str, Any]],
         gps_rows: list[dict[str, Any]],
     ) -> None:
+        latest_telemetry_by_run: dict[UUID, dict[str, Any]] = {}
+        latest_gps_by_run: dict[UUID, dict[str, Any]] = {}
+
         for row in telemetry_rows:
+            latest_telemetry_by_run[row["run_id"]] = row
+        for row in gps_rows:
+            latest_gps_by_run[row["run_id"]] = row
+
+        for row in latest_telemetry_by_run.values():
             run_id = row["run_id"]
             channels = [row.get(f"channel{i}_g") for i in range(1, 6)]
             await self._broadcaster.update_telemetry(
@@ -231,7 +239,7 @@ class IngestQueue:
                     "alarm_channels": [row.get(f"alarm_channel{i}", 0) or 0 for i in range(1, 6)],
                 },
             )
-        for row in gps_rows:
+        for row in latest_gps_by_run.values():
             await self._broadcaster.update_gps(
                 row["run_id"],
                 {
