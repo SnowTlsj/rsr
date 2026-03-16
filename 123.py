@@ -77,7 +77,7 @@ SERIAL_REOPEN_DELAY_SEC = 2.0
 # 扫描可用串口的间隔时间。
 SERIAL_SCAN_INTERVAL_SEC = 3.0
 # 连续收到多少帧有效数据后，才自动开始任务。
-SERIAL_STABLE_LINE_COUNT = 2
+SERIAL_STABLE_LINE_COUNT = 3
 # 当前任务在多久没有收到有效数据后，自动判定为结束，单位秒。
 RUN_IDLE_STOP_SEC = 15.0
 # 是否启用串口握手探测。
