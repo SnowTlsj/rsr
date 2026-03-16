@@ -1,19 +1,42 @@
-import { defineConfig } from 'vite'
-import vue from '@vitejs/plugin-vue'
-import { resolve } from 'path'
+import { defineConfig, loadEnv } from 'vite';
+import vue from '@vitejs/plugin-vue';
+import { resolve } from 'path';
 
-export default defineConfig({
-  plugins: [vue()],
-  server: {
-    host: true,            // 允许 0.0.0.0 监听（容器里需要）
-    port: 5173,
-    strictPort: true,
-    allowedHosts: ['nas.tlsi.top', '127.0.0.1', 'localhost'],
-    hmr: { clientPort: 5174 } // 宿主机访问端口（docker 映射 5174:5173）
-  },
-  resolve: {
-    alias: {
-      '@': resolve(__dirname, 'src')
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '');
+  const allowedHosts = (env.VITE_ALLOWED_HOSTS || 'localhost,127.0.0.1')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  const proxyTarget = (env.VITE_API_PROXY_TARGET || 'http://localhost:8100').trim();
+  const hmrClientPortRaw = (env.VITE_HMR_CLIENT_PORT || '').trim();
+  const hmrClientPort = Number(hmrClientPortRaw || '5174');
+
+  return {
+    plugins: [vue()],
+    server: {
+      host: true,
+      port: 5173,
+      strictPort: true,
+      allowedHosts,
+      hmr: Number.isFinite(hmrClientPort) && hmrClientPort > 0 ? { clientPort: hmrClientPort } : undefined,
+      proxy: {
+        '/api': {
+          target: proxyTarget,
+          changeOrigin: true
+        },
+        '/ws': {
+          target: proxyTarget,
+          ws: true,
+          changeOrigin: true
+        }
+      }
+    },
+    resolve: {
+      alias: {
+        '@': resolve(__dirname, 'src')
+      }
     }
-  }
-})
+  };
+});

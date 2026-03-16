@@ -1,0 +1,17 @@
+name: Domain Guard
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  hardcoded-domain-check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check forbidden hardcoded domains
+        shell: powershell
+        run: .\scripts\check_no_hardcoded_domains.ps1 -Root .

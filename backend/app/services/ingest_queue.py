@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -12,6 +13,8 @@ from sqlalchemy import insert
 from app.core.config import settings
 from app.db.models import GpsPoint, TelemetrySample
 from app.db.session import async_session_factory
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -32,7 +35,11 @@ class Broadcaster:
     async def add_client(self, run_id: UUID, websocket: Any) -> None:
         async with self._lock:
             self._clients.setdefault(run_id, set()).add(websocket)
-            print(f"[WS] Client connected to run_id: {run_id}, total clients: {len(self._clients.get(run_id, set()))}")
+            logger.info(
+                "WS client connected, run_id=%s, total_clients=%s",
+                run_id,
+                len(self._clients.get(run_id, set())),
+            )
 
     async def remove_client(self, run_id: UUID, websocket: Any) -> None:
         async with self._lock:
@@ -40,15 +47,18 @@ class Broadcaster:
             if not clients:
                 return
             clients.discard(websocket)
-            print(f"[WS] Client disconnected from run_id: {run_id}, remaining: {len(clients)}")
+            logger.info(
+                "WS client disconnected, run_id=%s, remaining_clients=%s",
+                run_id,
+                len(clients),
+            )
             if not clients:
                 self._clients.pop(run_id, None)
 
     async def update_telemetry(self, run_id: UUID, payload: dict[str, Any]) -> None:
         async with self._lock:
             self._latest_telemetry[run_id] = payload
-            client_count = len(self._clients.get(run_id, set()))
-            print(f"[INGEST] Telemetry for run_id: {run_id}, clients waiting: {client_count}")
+            logger.debug("Telemetry updated for run_id=%s", run_id)
 
     async def update_gps(self, run_id: UUID, payload: dict[str, Any]) -> None:
         async with self._lock:

@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict
 
 
 class RunStartRequest(BaseModel):
-    machine_id: str
+    pass
 
 
 class RunStartResponse(BaseModel):
@@ -24,7 +24,6 @@ class RunStopResponse(BaseModel):
 
 class RunSummary(BaseModel):
     run_id: UUID
-    machine_id: str
     run_name: str
     started_at: datetime
     ended_at: Optional[datetime] = None
@@ -49,7 +48,6 @@ class GpsPayload(BaseModel):
 
 class IngestRequest(BaseModel):
     ts: datetime
-    machine_id: str
     telemetry: Optional[TelemetryPayload] = None
     gps: Optional[GpsPayload] = None
 

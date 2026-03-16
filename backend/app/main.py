@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import secrets
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import delete, update
+from sqlalchemy import delete, select, text, update
 
 from app.api import routes
 from app.core.config import settings
@@ -14,11 +16,18 @@ from app.db.models import Run
 from app.db.session import async_session_factory
 from app.services.ingest_queue import Broadcaster, IngestQueue
 
+
+logging.basicConfig(
+    level=getattr(logging, settings.log_level, logging.INFO),
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
+logger = logging.getLogger(__name__)
+
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if settings.cors_allow_origins == "*" else settings.cors_allow_origins.split(","),
+    allow_origins=settings.cors_allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -33,8 +42,27 @@ routes.router.ingest_queue = ingest_queue
 app.include_router(routes.router)
 
 
+@app.get("/healthz")
+async def healthz() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.get("/readyz")
+async def readyz() -> dict[str, str]:
+    try:
+        async with async_session_factory() as session:
+            await session.execute(text("SELECT 1"))
+        return {"status": "ready"}
+    except Exception as exc:
+        logger.exception("Readiness check failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Database not ready") from exc
+
+
 @app.on_event("startup")
 async def startup() -> None:
+    logger.info("Application startup")
+    if settings.admin_token == "dev-admin-token" or settings.ingest_token == "devtoken":
+        logger.warning("Using default tokens in runtime. Please override ADMIN_TOKEN/INGEST_TOKEN in production.")
     app.state.telemetry_task = asyncio.create_task(broadcaster.telemetry_loop())
     app.state.gps_task = asyncio.create_task(broadcaster.gps_loop())
     app.state.worker_task = asyncio.create_task(ingest_queue.worker_loop())
@@ -44,6 +72,7 @@ async def startup() -> None:
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
+    logger.info("Application shutdown")
     for task in [
         app.state.telemetry_task,
         app.state.gps_task,
@@ -55,7 +84,11 @@ async def shutdown() -> None:
 
 
 @app.websocket("/ws/live")
-async def ws_live(websocket: WebSocket, run_id: str) -> None:
+async def ws_live(websocket: WebSocket, run_id: str, token: str | None = None) -> None:
+    if not token or not secrets.compare_digest(token, settings.admin_token):
+        await websocket.close(code=1008)
+        return
+
     await websocket.accept()
     try:
         run_uuid = UUID(run_id)
@@ -72,7 +105,7 @@ async def ws_live(websocket: WebSocket, run_id: str) -> None:
                 await websocket.close(code=1001)
                 break
     except WebSocketDisconnect:
-        pass
+        logger.debug("WebSocket disconnected for run_id=%s", run_uuid)
     finally:
         await broadcaster.remove_client(run_uuid, websocket)
 
@@ -84,35 +117,39 @@ async def _retention_loop() -> None:
         async with async_session_factory() as session:
             await session.execute(delete(Run).where(Run.started_at < cutoff))
             await session.commit()
+        logger.info("Retention cleanup complete, cutoff=%s", cutoff.isoformat())
 
 
 async def _timeout_check_loop() -> None:
-    """定期检查活跃任务，如果超过3分钟没有数据输入，自动终止任务"""
     while True:
-        await asyncio.sleep(30)  # 每30秒检查一次
+        await asyncio.sleep(30)
         now = datetime.now(timezone.utc)
         timeout_threshold = now - timedelta(minutes=3)
 
         async with async_session_factory() as session:
-            # 查找所有活跃任务
-            from sqlalchemy import select
             stmt = select(Run).where(Run.ended_at.is_(None))
             result = await session.execute(stmt)
             active_runs = result.scalars().all()
 
             for run in active_runs:
-                # 如果任务有 last_data_at 且超过3分钟没有数据
                 if run.last_data_at and run.last_data_at < timeout_threshold:
-                    print(f"[TIMEOUT] Auto-stopping run {run.id} due to inactivity (last data: {run.last_data_at})")
+                    logger.warning(
+                        "Auto-stopping run %s due to inactivity (last_data_at=%s)",
+                        run.id,
+                        run.last_data_at,
+                    )
                     await session.execute(
                         update(Run)
                         .where(Run.id == run.id)
                         .values(ended_at=now)
                     )
                     await session.commit()
-                # 如果任务从未收到数据，且启动时间超过3分钟
                 elif not run.last_data_at and run.started_at < timeout_threshold:
-                    print(f"[TIMEOUT] Auto-stopping run {run.id} due to no data received (started: {run.started_at})")
+                    logger.warning(
+                        "Auto-stopping run %s due to no data received (started_at=%s)",
+                        run.id,
+                        run.started_at,
+                    )
                     await session.execute(
                         update(Run)
                         .where(Run.id == run.id)

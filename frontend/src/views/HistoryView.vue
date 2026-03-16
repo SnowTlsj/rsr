@@ -1,30 +1,52 @@
 <template>
   <div class="history-container">
     <header class="history-header">
-      <h2>历史播种数据</h2>
+      <div class="title-wrap">
+        <h2>历史播种数据</h2>
+        <p>选择任务后可查看轨迹、生成报告和导出数据</p>
+      </div>
       <button class="back-btn" @click="goBack">返回监控</button>
     </header>
 
     <div class="history-body">
       <aside class="runs-list">
         <div class="list-title">播种记录 (最近30天)</div>
+        <div class="list-tools">
+          <input v-model.trim="keyword" class="tool-input" placeholder="搜索任务名称" aria-label="搜索任务名称" />
+          <select v-model="sortMode" class="tool-select" aria-label="排序方式">
+            <option value="time_desc">时间倒序</option>
+            <option value="time_asc">时间正序</option>
+            <option value="name_asc">名称 A-Z</option>
+            <option value="name_desc">名称 Z-A</option>
+          </select>
+          <button class="tool-refresh" type="button" :disabled="loading" @click="loadRuns">
+            {{ loading ? '刷新中...' : '刷新' }}
+          </button>
+        </div>
         <div v-if="loading" class="loading">加载中...</div>
+        <div v-else-if="loadError" class="load-error">
+          <span>{{ loadError }}</span>
+          <button class="tool-refresh" @click="loadRuns">重试</button>
+        </div>
         <ul v-else>
-          <li v-for="run in runs" :key="run.run_id" :class="{ active: run.run_id === selectedRunId }">
-            <div @click="selectRun(run.run_id)" class="run-item">
+          <li v-for="run in displayRuns" :key="run.run_id" :class="{ active: run.run_id === selectedRunId }">
+            <button type="button" @click="selectRun(run.run_id)" class="run-item" :aria-label="`查看任务 ${run.run_name}`">
               <div class="run-name">{{ run.run_name }}</div>
               <div class="run-time">{{ formatTime(run.started_at) }}</div>
-            </div>
+            </button>
             <div class="action-buttons">
               <button
                 class="action-btn report-btn"
+                type="button"
                 @click.stop="showReport(run)"
+                :disabled="reportLoading || exporting"
                 title="查看报告"
               >
-                报告
+                {{ reportLoading ? '生成中...' : '报告' }}
               </button>
               <button
                 class="action-btn export-btn"
+                type="button"
                 @click.stop="exportRunData(run)"
                 :disabled="exporting"
                 title="导出Excel"
@@ -33,14 +55,16 @@
               </button>
               <button
                 class="action-btn delete-btn"
+                type="button"
                 @click.stop="deleteRun(run)"
+                :disabled="reportLoading || exporting"
                 title="删除记录"
               >
                 删除
               </button>
             </div>
           </li>
-          <li v-if="runs.length === 0" class="empty">暂无记录</li>
+          <li v-if="displayRuns.length === 0" class="empty">暂无记录</li>
         </ul>
       </aside>
 
@@ -52,10 +76,12 @@
           <div><strong>轨迹点:</strong> {{ gpsPoints.length }}</div>
         </div>
         <div class="map-frame">
+          <div v-if="mapLoading" class="map-loading">轨迹加载中...</div>
+          <div v-else-if="!selectedRunId" class="map-empty">请选择左侧任务查看轨迹</div>
           <div id="history-map"></div>
           <div class="map-controls">
-            <button class="map-ctrl-btn" @click="zoomIn" title="放大">+</button>
-            <button class="map-ctrl-btn" @click="zoomOut" title="缩小">-</button>
+            <button class="map-ctrl-btn" type="button" @click="zoomIn" title="放大">+</button>
+            <button class="map-ctrl-btn" type="button" @click="zoomOut" title="缩小">-</button>
           </div>
         </div>
       </section>
@@ -65,6 +91,7 @@
     <ReportModal
       :visible="reportVisible"
       :report="reportData"
+      :exporting="exporting || reportLoading"
       @close="reportVisible = false"
       @export-pdf="handleExportPDF"
       @export-excel="handleExportExcel"
@@ -83,15 +110,15 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, reactive, computed } from 'vue';
+import { onBeforeUnmount, onMounted, ref, reactive, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { http } from '@/api/http';
 import * as XLSX from 'xlsx';
 import ReportModal from '@/components/ReportModal.vue';
+import { isAuthError } from '@/utils/httpError';
 
 interface RunSummary {
   run_id: string;
-  machine_id: string;
   run_name: string;
   started_at: string;
   ended_at: string | null;
@@ -105,19 +132,35 @@ interface GpsPoint {
   heading_deg?: number;
 }
 
-interface TelemetryData {
-  ts: string;
-  channel1_g: number;
-  channel2_g: number;
-  channel3_g: number;
-  channel4_g: number;
-  channel5_g: number;
-  seed_total_g: number;
-  distance_m: number;
-  leak_distance_m: number;
-  speed_kmh: number;
-  alarm_blocked: boolean;
-  alarm_no_seed: boolean;
+interface ReportData {
+  run_id: string;
+  run_name: string;
+  started_at: string;
+  ended_at: string;
+  duration: string;
+  total_seed_kg: string;
+  total_distance_km: string;
+  leak_distance_km: string;
+  avg_speed_kmh: string;
+  uniformity_index: string;
+  channel1_kg: string;
+  channel2_kg: string;
+  channel3_kg: string;
+  channel4_kg: string;
+  channel5_kg: string;
+  alarm_blocked_count: number;
+  alarm_no_seed_count: number;
+  gps_point_count: number;
+  start_location: string;
+  end_location: string;
+  trend_data: Array<{
+    time: string;
+    channel1: number;
+    channel2: number;
+    channel3: number;
+    channel4: number;
+    channel5: number;
+  }>;
 }
 
 const router = useRouter();
@@ -126,26 +169,48 @@ const selectedRunId = ref<string | null>(null);
 const selectedRun = ref<RunSummary | null>(null);
 const gpsPoints = ref<GpsPoint[]>([]);
 const loading = ref(false);
+const loadError = ref('');
 const exporting = ref(false);
+const reportLoading = ref(false);
+const mapLoading = ref(false);
+const keyword = ref('');
+const sortMode = ref<'time_desc' | 'time_asc' | 'name_asc' | 'name_desc'>('time_desc');
 
 // 报告相关状态
 const reportVisible = ref(false);
-const reportData = ref<any>({
+const reportData = ref<ReportData>({
   run_id: '',
-  machine_id: '', run_name: '', started_at: '', ended_at: '', duration: '',
+  run_name: '', started_at: '', ended_at: '', duration: '',
   total_seed_kg: '0', total_distance_km: '0', leak_distance_km: '0', avg_speed_kmh: '0',
+  uniformity_index: '0',
   channel1_kg: '0', channel2_kg: '0', channel3_kg: '0', channel4_kg: '0', channel5_kg: '0',
   alarm_blocked_count: 0, alarm_no_seed_count: 0, gps_point_count: 0,
   start_location: '-', end_location: '-', trend_data: []
 });
 const reportRun = ref<RunSummary | null>(null);
 const reportGps = ref<GpsPoint[]>([]);
-const reportTelemetry = ref<any[]>([]);
+const reportTelemetry = ref<Record<string, any>[]>([]);
 
 let mapInstance: any = null;
 let overlay: any = null;
 
-const machineId = import.meta.env.VITE_MACHINE_ID || 'machine-001';
+const displayRuns = computed(() => {
+  const search = keyword.value.toLowerCase();
+  const filtered = runs.value.filter((run) => run.run_name.toLowerCase().includes(search));
+  return filtered.sort((a, b) => {
+    switch (sortMode.value) {
+      case 'time_asc':
+        return new Date(a.started_at).getTime() - new Date(b.started_at).getTime();
+      case 'name_asc':
+        return a.run_name.localeCompare(b.run_name, 'zh-CN');
+      case 'name_desc':
+        return b.run_name.localeCompare(a.run_name, 'zh-CN');
+      case 'time_desc':
+      default:
+        return new Date(b.started_at).getTime() - new Date(a.started_at).getTime();
+    }
+  });
+});
 
 // Toast 提示
 const toast = reactive({
@@ -192,15 +257,21 @@ const initMap = () => {
 
 const loadRuns = async () => {
   loading.value = true;
+  loadError.value = '';
   try {
-    const response = await http.get('/runs', { params: { days: 30, machine_id: machineId } });
+    const response = await http.get('/runs', { params: { days: 30 } });
     runs.value = response.data || [];
     if (runs.value.length === 0) {
       showToast('暂无历史记录', 'info');
     }
   } catch (e) {
     console.error('Load runs failed', e);
-    showToast('加载历史记录失败，请重试', 'error');
+    loadError.value = '加载失败，请检查网络后重试';
+    if (isAuthError(e)) {
+      showToast('加载失败：鉴权无效，请检查管理令牌', 'error');
+    } else {
+      showToast('加载历史记录失败，请重试', 'error');
+    }
   } finally {
     loading.value = false;
   }
@@ -209,6 +280,7 @@ const loadRuns = async () => {
 const selectRun = async (runId: string) => {
   selectedRunId.value = runId;
   selectedRun.value = runs.value.find((run) => run.run_id === runId) || null;
+  mapLoading.value = true;
   try {
     const response = await http.get(`/runs/${runId}/gps`, { params: { limit: 100000 } });
     gpsPoints.value = response.data || [];
@@ -220,7 +292,13 @@ const selectRun = async (runId: string) => {
     renderPath();
   } catch (e) {
     console.error('Load GPS failed', e);
-    showToast('加载GPS轨迹失败，请重试', 'error');
+    if (isAuthError(e)) {
+      showToast('加载轨迹失败：鉴权无效，请检查管理令牌', 'error');
+    } else {
+      showToast('加载GPS轨迹失败，请重试', 'error');
+    }
+  } finally {
+    mapLoading.value = false;
   }
 };
 
@@ -280,7 +358,7 @@ const deleteRun = async (run: RunSummary) => {
     runs.value = runs.value.filter(r => r.run_id !== run.run_id);
     // 如果删除的是当前选中的，清空选中状态
     if (selectedRunId.value === run.run_id) {
-      selectedRunId.value = '';
+      selectedRunId.value = null;
       selectedRun.value = null;
       gpsPoints.value = [];
       if (mapInstance) {
@@ -289,7 +367,11 @@ const deleteRun = async (run: RunSummary) => {
     }
   } catch (e) {
     console.error('Delete run failed', e);
-    showToast('删除失败，请重试', 'error');
+    if (isAuthError(e)) {
+      showToast('删除失败：鉴权无效，请检查管理令牌', 'error');
+    } else {
+      showToast('删除失败，请重试', 'error');
+    }
   }
 };
 
@@ -298,6 +380,10 @@ const goBack = () => { router.push('/'); };
 
 // 生成报告
 const showReport = async (run: RunSummary) => {
+  if (reportLoading.value) {
+    return;
+  }
+  reportLoading.value = true;
   try {
     showToast('正在生成报告...', 'info');
 
@@ -359,7 +445,6 @@ const showReport = async (run: RunSummary) => {
 
     reportData.value = {
       run_id: run.run_id,
-      machine_id: run.machine_id,
       run_name: run.run_name,
       started_at: run.started_at,
       ended_at: run.ended_at || '-',
@@ -390,16 +475,26 @@ const showReport = async (run: RunSummary) => {
 
   } catch (e) {
     console.error('Generate report failed', e);
-    showToast('生成报告失败，请重试', 'error');
+    if (isAuthError(e)) {
+      showToast('生成报告失败：鉴权无效，请检查管理令牌', 'error');
+    } else {
+      showToast('生成报告失败，请重试', 'error');
+    }
+  } finally {
+    reportLoading.value = false;
   }
 };
 
 // 导出 PDF（使用浏览器打印功能）
 const handleExportPDF = async () => {
+  if (exporting.value) {
+    return;
+  }
   if (!reportData.value) {
     showToast('暂无报告数据', 'warning');
     return;
   }
+  exporting.value = true;
   try {
     if (!reportRun.value) {
       showToast('暂无报告任务', 'warning');
@@ -423,7 +518,13 @@ const handleExportPDF = async () => {
     showToast('PDF 导出成功', 'success', 2000);
   } catch (e) {
     console.error('Export PDF failed', e);
-    showToast('PDF 导出失败，请重试', 'error');
+    if (isAuthError(e)) {
+      showToast('PDF 导出失败：鉴权无效，请检查管理令牌', 'error');
+    } else {
+      showToast('PDF 导出失败，请重试', 'error');
+    }
+  } finally {
+    exporting.value = false;
   }
 };
 
@@ -525,9 +626,9 @@ const exportRunData = async (
       XLSX.utils.book_append_sheet(wb, ws2, '播种数据');
     }
 
-    // 生成文件名：machineId-时间.xlsx
+    // 生成文件名：run-时间.xlsx
     const startTime = new Date(run.started_at);
-    const fileName = `${run.machine_id}-${startTime.getFullYear()}${String(startTime.getMonth() + 1).padStart(2, '0')}${String(startTime.getDate()).padStart(2, '0')}-${String(startTime.getHours()).padStart(2, '0')}${String(startTime.getMinutes()).padStart(2, '0')}${String(startTime.getSeconds()).padStart(2, '0')}.xlsx`;
+    const fileName = `run-${startTime.getFullYear()}${String(startTime.getMonth() + 1).padStart(2, '0')}${String(startTime.getDate()).padStart(2, '0')}-${String(startTime.getHours()).padStart(2, '0')}${String(startTime.getMinutes()).padStart(2, '0')}${String(startTime.getSeconds()).padStart(2, '0')}.xlsx`;
 
     // 导出文件
     XLSX.writeFile(wb, fileName);
@@ -535,64 +636,84 @@ const exportRunData = async (
 
   } catch (e) {
     console.error('Export failed', e);
-    showToast('导出失败，请重试', 'error');
+    if (isAuthError(e)) {
+      showToast('导出失败：鉴权无效，请检查管理令牌', 'error');
+    } else {
+      showToast('导出失败，请重试', 'error');
+    }
   } finally {
     exporting.value = false;
   }
 };
 
 onMounted(async () => { initMap(); await loadRuns(); });
+
+onBeforeUnmount(() => {
+  if (toastTimer) {
+    window.clearTimeout(toastTimer);
+    toastTimer = null;
+  }
+  if (mapInstance) {
+    try {
+      mapInstance.clearOverlays();
+    } catch {
+      // ignore map cleanup errors on unmount
+    }
+    mapInstance = null;
+    overlay = null;
+  }
+});
 </script>
 
 <style scoped>
-.history-container { padding: 20px; max-width: 1400px; margin: 0 auto; font-family: "Microsoft YaHei", sans-serif; }
-.history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid #ccc; padding-bottom: 10px; }
-.history-header h2 { margin: 0; font-size: 24px; color: #000; font-weight: bold; }
-.back-btn { padding: 8px 16px; border: 1px solid #666; background: #f5f5f5; cursor: pointer; border-radius: 4px; font-size: 14px; }
-.back-btn:hover { background: #e0e0e0; }
-.history-body { display: flex; gap: 20px; }
-.runs-list { width: 280px; border: 1px solid #ccc; padding: 10px; max-height: 700px; overflow: auto; border-radius: 4px; }
-.list-title { font-weight: bold; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #eee; color: #000; }
-.loading { text-align: center; padding: 20px; color: #000; }
+.history-container { padding: 16px; width: 100%; min-height: 100vh; margin: 0; font-family: var(--font-main); color: var(--c-text-primary); }
+.history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid var(--c-border); padding-bottom: 12px; gap: 12px; }
+.title-wrap h2 { margin: 0; font-size: 26px; color: var(--c-text-primary); font-weight: 800; }
+.title-wrap p { margin: 3px 0 0; color: var(--c-text-secondary); font-size: 13px; }
+.back-btn { padding: 9px 15px; border: 1px solid #93b2dd; background: #f8fbff; cursor: pointer; border-radius: 999px; font-size: 14px; color: #1e3a8a; font-weight: 700; white-space: nowrap; }
+.back-btn:hover { background: #eaf2ff; }
+.history-body { display: grid; grid-template-columns: 320px 1fr; gap: 12px; min-height: calc(100vh - 132px); }
+.runs-list { border: 1px solid var(--c-border); padding: 10px; max-height: calc(100vh - 132px); overflow: auto; border-radius: 12px; background: #ffffff; box-shadow: var(--shadow-sm); }
+.list-title { font-weight: 800; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--c-border); color: var(--c-text-primary); }
+.list-tools { display: grid; grid-template-columns: 1fr; gap: 8px; margin-bottom: 10px; }
+.tool-input, .tool-select { width: 100%; border: 1px solid #c7d8ea; border-radius: 8px; padding: 8px 10px; font-size: 13px; color: var(--c-text-primary); background: #fff; }
+.tool-refresh { border: 1px solid #a8bfd8; border-radius: 8px; background: #eef4ff; padding: 8px 10px; cursor: pointer; font-size: 13px; color: #1e3a8a; font-weight: 700; }
+.tool-refresh:disabled { opacity: 0.6; cursor: not-allowed; }
+.loading { text-align: center; padding: 20px; color: var(--c-text-primary); }
+.load-error { display: flex; flex-direction: column; gap: 8px; border: 1px solid #ffd6d6; background: #fff5f5; color: #7f1d1d; border-radius: 8px; padding: 10px; font-size: 12px; margin-bottom: 8px; }
 .runs-list ul { list-style: none; padding: 0; margin: 0; }
-.runs-list li { padding: 10px; border-bottom: 1px solid #eee; border-radius: 4px; margin-bottom: 4px; display: flex; flex-direction: column; gap: 8px; }
-.run-item { cursor: pointer; flex: 1; }
-.runs-list li:hover .run-item { background: #f5f5f5; padding: 4px; border-radius: 4px; }
-.runs-list li.active { background: #e6f2ff; border-color: #1d6fd8; }
-.runs-list li.empty { color: #000; text-align: center; cursor: default; }
-.run-name { font-weight: 600; font-size: 14px; margin-bottom: 4px; color: #000; }
-.run-time { font-size: 12px; color: #000; }
-.action-buttons { display: flex; gap: 8px; }
+.runs-list li { padding: 10px; border: 1px solid #e6edf5; border-radius: 10px; margin-bottom: 8px; display: flex; flex-direction: column; gap: 8px; background: #fff; }
+.run-item { cursor: pointer; flex: 1; text-align: left; width: 100%; border: 0; background: transparent; padding: 0; color: inherit; }
+.runs-list li:hover .run-item { background: #f2f7fd; padding: 6px; border-radius: 6px; }
+.runs-list li.active { background: #edf3ff; border-color: #8cb4df; box-shadow: inset 0 0 0 1px #c5dbf1; }
+.runs-list li.empty { color: var(--c-text-secondary); text-align: center; cursor: default; }
+.run-name { font-weight: 700; font-size: 14px; margin-bottom: 4px; color: var(--c-text-primary); line-height: 1.4; }
+.run-time { font-size: 12px; color: var(--c-text-secondary); }
+.action-buttons { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .action-btn {
-  flex: 1;
-  padding: 6px 12px;
+  padding: 7px 8px;
   border: none;
-  border-radius: 4px;
+  border-radius: 8px;
   cursor: pointer;
   font-size: 12px;
   transition: all 0.2s;
-  font-weight: 500;
+  font-weight: 700;
 }
-.report-btn {
-  background: #52c41a;
-  color: white;
-}
-.report-btn:hover { background: #73d13d; }
-.export-btn {
-  background: #1890ff;
-  color: white;
-}
-.export-btn:hover:not(:disabled) { background: #40a9ff; }
+.action-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.report-btn { background: #16a34a; color: white; }
+.report-btn:hover { filter: brightness(1.08); }
+.export-btn { background: #1d4ed8; color: white; }
+.export-btn:hover:not(:disabled) { filter: brightness(1.08); }
 .export-btn:disabled { background: #d9d9d9; cursor: not-allowed; }
-.delete-btn {
-  background: #ff4d4f;
-  color: white;
-}
-.delete-btn:hover { background: #ff7875; }
-.map-section { flex: 1; display: flex; flex-direction: column; gap: 10px; }
-.run-info { display: flex; gap: 20px; font-size: 14px; padding: 10px; background: #f9f9f9; border-radius: 4px; flex-wrap: wrap; color: #000; }
-.map-frame { flex: 1; border: 2px solid #999; min-height: 500px; border-radius: 4px; overflow: hidden; position: relative; }
+.delete-btn { background: #dc2626; color: white; }
+.delete-btn:hover { filter: brightness(1.08); }
+.map-section { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.run-info { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; font-size: 13px; padding: 10px; background: #fff; border-radius: 10px; flex-wrap: wrap; color: var(--c-text-primary); border: 1px solid var(--c-border); box-shadow: var(--shadow-sm); }
+.run-info > div { background: #f8fbff; border: 1px solid #dde8f4; border-radius: 8px; padding: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-frame { flex: 1; border: 1px solid var(--c-border-strong); min-height: 500px; border-radius: 12px; overflow: hidden; position: relative; background: var(--c-bg-panel); box-shadow: var(--shadow-md); }
 #history-map { width: 100%; height: 100%; min-height: 500px; }
+.map-loading { position: absolute; top: 10px; left: 10px; z-index: 1000; background: rgba(255,255,255,0.95); border: 1px solid #d0d7e2; border-radius: 8px; padding: 8px 10px; font-size: 12px; color: #1f2937; }
+.map-empty { position: absolute; top: 10px; left: 10px; z-index: 1000; background: rgba(255,255,255,0.95); border: 1px solid var(--c-border); border-radius: 8px; padding: 8px 10px; font-size: 12px; color: var(--c-text-secondary); }
 .map-controls {
   position: absolute;
   top: 10px;
@@ -600,20 +721,20 @@ onMounted(async () => { initMap(); await loadRuns(); });
   z-index: 999;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
 }
 .map-ctrl-btn {
-  width: 32px;
-  height: 32px;
-  border: 1px solid #999;
-  background: rgba(255, 255, 255, 0.9);
-  border-radius: 4px;
+  width: 34px;
+  height: 34px;
+  border: 1px solid #9bb1c8;
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: 8px;
   font-size: 18px;
   font-weight: bold;
   cursor: pointer;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+  box-shadow: var(--shadow-sm);
 }
-.map-ctrl-btn:hover { background: #e6e6e6; }
+.map-ctrl-btn:hover { background: #edf5ff; }
 
 /* Toast 样式 */
 .toast {
@@ -675,9 +796,13 @@ onMounted(async () => { initMap(); await loadRuns(); });
 }
 
 @media (max-width: 900px) {
-  .history-body { flex-direction: column; }
-  .runs-list { width: 100%; max-height: 240px; }
+  .history-container { padding: 10px; }
+  .history-header { flex-direction: column; align-items: stretch; }
+  .title-wrap h2 { font-size: 20px; }
+  .history-body { grid-template-columns: 1fr; min-height: auto; }
+  .runs-list { max-height: 260px; }
   .run-info { flex-direction: column; gap: 5px; }
+  .run-info { grid-template-columns: 1fr; }
   .map-frame { min-height: 400px; }
   #history-map { min-height: 400px; }
   .toast { top: 60px; min-width: 150px; max-width: 90%; font-size: 12px; padding: 10px 16px; }

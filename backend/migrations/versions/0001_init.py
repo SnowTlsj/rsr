@@ -1,7 +1,7 @@
-"""Initial migration
+﻿"""Initial migration
 
-Revision ID: 001
-Revises: 
+Revision ID: 0001
+Revises:
 Create Date: 2024-01-01 00:00:00.000000
 """
 
@@ -19,10 +19,10 @@ def upgrade() -> None:
     op.create_table(
         'runs',
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column('machine_id', sa.String(64), nullable=False, index=True),
         sa.Column('run_name', sa.String(128), nullable=False),
         sa.Column('started_at', sa.DateTime(timezone=True), nullable=False),
         sa.Column('ended_at', sa.DateTime(timezone=True), nullable=True),
+        sa.Column('last_data_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('notes', sa.Text, nullable=True),
     )
 
@@ -40,8 +40,14 @@ def upgrade() -> None:
         sa.Column('distance_m', sa.Float, nullable=True),
         sa.Column('leak_distance_m', sa.Float, nullable=True),
         sa.Column('speed_kmh', sa.Float, nullable=True),
+        sa.Column('uniformity_index', sa.Float, nullable=True),
         sa.Column('alarm_blocked', sa.Boolean, nullable=True),
         sa.Column('alarm_no_seed', sa.Boolean, nullable=True),
+        sa.Column('alarm_channel1', sa.Integer, nullable=True),
+        sa.Column('alarm_channel2', sa.Integer, nullable=True),
+        sa.Column('alarm_channel3', sa.Integer, nullable=True),
+        sa.Column('alarm_channel4', sa.Integer, nullable=True),
+        sa.Column('alarm_channel5', sa.Integer, nullable=True),
     )
 
     op.create_table(
@@ -51,8 +57,6 @@ def upgrade() -> None:
         sa.Column('ts', sa.DateTime(timezone=True), index=True),
         sa.Column('lon', sa.Float, nullable=False),
         sa.Column('lat', sa.Float, nullable=False),
-        sa.Column('alt_m', sa.Float, nullable=True),
-        sa.Column('heading_deg', sa.Float, nullable=True),
     )
 
     op.create_index('ix_telemetry_run_ts', 'telemetry_samples', ['run_id', 'ts'])
@@ -65,3 +69,5 @@ def downgrade() -> None:
     op.drop_table('gps_points')
     op.drop_table('telemetry_samples')
     op.drop_table('runs')
+
+

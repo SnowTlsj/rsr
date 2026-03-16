@@ -1,5 +1,31 @@
 export type WsMessageHandler = (data: any) => void;
-export type WsEventHandler = () => void;
+export type WsOpenHandler = () => void;
+export type WsCloseHandler = (event: CloseEvent) => void;
+
+const normalizeBase = (raw: string) => raw.replace(/\/$/, '');
+
+export const resolveWsBase = (): string => {
+  const fromEnv = (import.meta.env.VITE_WS_BASE || '').trim();
+  if (fromEnv) {
+    return normalizeBase(fromEnv);
+  }
+
+  if (typeof window === 'undefined') {
+    return 'ws://127.0.0.1:8100';
+  }
+
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${proto}//${window.location.host}`;
+};
+
+export const buildLiveWsUrl = (runId: string, token?: string): string => {
+  const url = new URL(`${resolveWsBase()}/ws/live`);
+  url.searchParams.set('run_id', runId);
+  if (token) {
+    url.searchParams.set('token', token);
+  }
+  return url.toString();
+};
 
 export class ReconnectingWebSocket {
   private url: string;
@@ -8,11 +34,11 @@ export class ReconnectingWebSocket {
   private reconnectDelayMs = 1000;
   private maxDelayMs = 8000;
   private handler?: WsMessageHandler;
-  private onOpen?: WsEventHandler;
-  private onClose?: WsEventHandler;
+  private onOpen?: WsOpenHandler;
+  private onClose?: WsCloseHandler;
   private pingTimer: number | null = null;
 
-  constructor(url: string, handler?: WsMessageHandler, onOpen?: WsEventHandler, onClose?: WsEventHandler) {
+  constructor(url: string, handler?: WsMessageHandler, onOpen?: WsOpenHandler, onClose?: WsCloseHandler) {
     this.url = url;
     this.handler = handler;
     this.onOpen = onOpen;
@@ -34,18 +60,21 @@ export class ReconnectingWebSocket {
       }
     };
 
-    this.ws.onclose = () => {
+    this.ws.onclose = (event) => {
       if (this.pingTimer) {
         window.clearInterval(this.pingTimer);
         this.pingTimer = null;
       }
+      if (event.code === 1008 || event.code === 4401 || event.code === 4403) {
+        this.shouldReconnect = false;
+      }
       if (this.onClose) {
-        this.onClose();
+        this.onClose(event);
       }
       if (!this.shouldReconnect) {
         return;
       }
-      setTimeout(() => this.connect(), this.reconnectDelayMs);
+      window.setTimeout(() => this.connect(), this.reconnectDelayMs);
       this.reconnectDelayMs = Math.min(this.reconnectDelayMs * 2, this.maxDelayMs);
     };
 

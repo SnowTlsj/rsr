@@ -1,5 +1,5 @@
 <template>
-  <div class="monitor-container">
+  <div class="monitor-container" :style="containerStyle">
     <header class="header">
       <div class="logo-section">
         <img src="@/assets/cau_logo.png" alt="CAU Logo" class="logo" />
@@ -7,11 +7,23 @@
       <div class="title-section">
         <h1>肉苁蓉播种监测网页端</h1>
       </div>
+      <div class="style-controls">
+        <span>主题</span>
+        <select v-model="activeTheme" aria-label="背景主题">
+          <option value="paper">宣纸浅米</option>
+          <option value="landscape">青绿山水</option>
+          <option value="pattern">苁蓉纹样</option>
+        </select>
+        <span>背景透明度</span>
+        <input v-model.number="bgOpacity" type="range" min="0" max="1" step="0.05" />
+      </div>
       <div class="header-actions">
-        <button class="action-btn" :class="{ active: isRunning }" @click="toggleRun">
-          {{ isRunning ? '停止播种' : '开始播种' }}
+        <button class="action-btn" :class="{ active: isRunning }" :disabled="isRunActionPending" @click="toggleRun">
+          {{ isRunActionPending ? (isRunning ? '停止中...' : '启动中...') : (isRunning ? '停止播种' : '开始播种') }}
         </button>
-        <button class="action-btn" @click="manualSync" title="手动同步任务状态">同步</button>
+        <button class="action-btn" :disabled="isSyncPending || isRunActionPending" @click="manualSync" title="手动同步任务状态">
+          {{ isSyncPending ? '同步中...' : '同步' }}
+        </button>
         <button class="action-btn" @click="goHistory">历史数据</button>
       </div>
     </header>
@@ -31,14 +43,38 @@
         <span class="status-value" :class="connectionStatusClass">{{ connectionStatusText }}</span>
       </div>
       <div class="status-item">
-        <span class="status-label">设备ID:</span>
-        <span class="status-value">{{ machineId }}</span>
+        <span class="status-label">最后心跳:</span>
+        <span class="status-value">{{ lastHeartbeatText }}</span>
       </div>
     </div>
 
     <main class="main-content">
       <div class="left-panel">
         <h2 class="section-title">播种信息</h2>
+        <div
+          class="cistanche-mascot"
+          :style="{ left: `${mascotPos.x}px`, top: `${mascotPos.y}px` }"
+          role="button"
+          tabindex="0"
+          @pointerdown="onMascotPointerDown"
+          @click.stop="emitAroma"
+          @keydown.enter.prevent="emitAroma"
+          @keydown.space.prevent="emitAroma"
+        >
+          <div class="mascot-stem"></div>
+          <div class="mascot-cap"></div>
+          <div class="mascot-eye left"></div>
+          <div class="mascot-eye right"></div>
+          <div class="mascot-smile"></div>
+        </div>
+        <div class="aroma-layer" aria-hidden="true">
+          <span
+            v-for="p in aromaParticles"
+            :key="p.id"
+            class="aroma-particle"
+            :style="{ left: `${p.x}px`, top: `${p.y}px`, '--drift': `${p.drift}px`, '--duration': `${p.duration}ms` }"
+          />
+        </div>
         <div class="data-grid">
           <div class="data-row"><label>通道1播种量：</label><div class="value-box">{{ sensorData.channel1.toFixed(1) }}</div><span class="unit">g</span><span class="alarm-light" :class="{ active: alarmData.channel1 }"></span></div>
           <div class="data-row"><label>通道2播种量：</label><div class="value-box">{{ sensorData.channel2.toFixed(1) }}</div><span class="unit">g</span><span class="alarm-light" :class="{ active: alarmData.channel2 }"></span></div>
@@ -81,9 +117,10 @@
 <script setup lang="ts">
 import { reactive, computed, onMounted, watch, ref, onBeforeUnmount } from 'vue';
 import { useRouter } from 'vue-router';
-import { http } from '@/api/http';
-import { ReconnectingWebSocket } from '@/api/ws';
+import { getAuthToken, http } from '@/api/http';
+import { buildLiveWsUrl, ReconnectingWebSocket } from '@/api/ws';
 import { useRunStore } from '@/stores/runStore';
+import { isAuthError } from '@/utils/httpError';
 
 const router = useRouter();
 const runStore = useRunStore();
@@ -124,12 +161,34 @@ let marker: any = null;
 let polyline: any = null;  // 轨迹线
 const isSatelliteMode = ref(true);
 let wsClient: ReconnectingWebSocket | null = null;
+let manualCloseWs = false;
 const lastHeartbeatAt = ref<number | null>(null);
 let heartbeatTimer: number | null = null;
-
-const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:8200/api/v1';
-const wsBase = import.meta.env.VITE_WS_BASE || 'ws://localhost:8200';
-const machineId = import.meta.env.VITE_MACHINE_ID || 'machine-001';
+const isRunActionPending = ref(false);
+const isSyncPending = ref(false);
+const bgOpacity = ref(0.38);
+const activeTheme = ref<'paper' | 'landscape' | 'pattern'>('paper');
+const THEME_STORAGE_KEY = 'monitor_theme';
+const OPACITY_STORAGE_KEY = 'monitor_theme_opacity';
+const themeImageMap: Record<'paper' | 'landscape' | 'pattern', string> = {
+  paper: "url('/themes/antique-paper.jpg')",
+  landscape: "url('/themes/landscape-ink.jpg')",
+  pattern: "url('/themes/cistanche-pattern.webp')"
+};
+const containerStyle = computed(() => ({
+  '--antique-opacity': `${bgOpacity.value}`,
+  '--theme-image': themeImageMap[activeTheme.value]
+}));
+const mascotPos = reactive({ x: 18, y: 76 });
+const mascotSize = { w: 86, h: 122 };
+const dragState = reactive({
+  active: false,
+  pointerId: -1,
+  offsetX: 0,
+  offsetY: 0
+});
+const aromaParticles = ref<Array<{ id: number; x: number; y: number; drift: number; duration: number }>>([]);
+let particleId = 1;
 
 const isRunning = computed(() => !!runStore.runId);
 
@@ -153,6 +212,13 @@ const connectionStatusClass = computed(() => {
     case 'closed': return 'status-disconnected';
     default: return '';
   }
+});
+
+const lastHeartbeatText = computed(() => {
+  if (!lastHeartbeatAt.value) {
+    return '-';
+  }
+  return new Date(lastHeartbeatAt.value).toLocaleTimeString('zh-CN', { hour12: false });
 });
 
 // Toast 提示
@@ -250,6 +316,62 @@ watch(() => [gpsData.longitude, gpsData.latitude], ([newLng, newLat]) => {
 
 const goHistory = () => { router.push('/history'); };
 
+const clampMascotPosition = (nextX: number, nextY: number) => {
+  const panel = document.querySelector('.left-panel') as HTMLElement | null;
+  if (!panel) {
+    mascotPos.x = Math.max(0, nextX);
+    mascotPos.y = Math.max(0, nextY);
+    return;
+  }
+  const maxX = Math.max(0, panel.clientWidth - mascotSize.w - 8);
+  const maxY = Math.max(0, panel.clientHeight - mascotSize.h - 8);
+  mascotPos.x = Math.min(maxX, Math.max(8, nextX));
+  mascotPos.y = Math.min(maxY, Math.max(56, nextY));
+};
+
+const onMascotPointerDown = (event: PointerEvent) => {
+  const panel = document.querySelector('.left-panel') as HTMLElement | null;
+  if (!panel) return;
+  const panelRect = panel.getBoundingClientRect();
+  dragState.active = true;
+  dragState.pointerId = event.pointerId;
+  dragState.offsetX = event.clientX - panelRect.left - mascotPos.x;
+  dragState.offsetY = event.clientY - panelRect.top - mascotPos.y;
+};
+
+const onGlobalPointerMove = (event: PointerEvent) => {
+  if (!dragState.active || event.pointerId !== dragState.pointerId) return;
+  const panel = document.querySelector('.left-panel') as HTMLElement | null;
+  if (!panel) return;
+  const panelRect = panel.getBoundingClientRect();
+  const nextX = event.clientX - panelRect.left - dragState.offsetX;
+  const nextY = event.clientY - panelRect.top - dragState.offsetY;
+  clampMascotPosition(nextX, nextY);
+};
+
+const onGlobalPointerUp = (event: PointerEvent) => {
+  if (!dragState.active || event.pointerId !== dragState.pointerId) return;
+  dragState.active = false;
+  dragState.pointerId = -1;
+};
+
+const emitAroma = () => {
+  const centerX = mascotPos.x + mascotSize.w / 2;
+  const startY = mascotPos.y + 24;
+  const batch = Array.from({ length: 9 }).map((_, index) => ({
+    id: particleId++,
+    x: centerX + (index - 3) * 6,
+    y: startY + Math.random() * 10,
+    drift: Math.round((Math.random() - 0.5) * 46),
+    duration: 1300 + Math.round(Math.random() * 500)
+  }));
+  aromaParticles.value.push(...batch);
+  window.setTimeout(() => {
+    const ids = new Set(batch.map((item) => item.id));
+    aromaParticles.value = aromaParticles.value.filter((item) => !ids.has(item.id));
+  }, 2200);
+};
+
 const handleMessage = (message: any) => {
   if (!message || typeof message !== 'object') return;
   // 忽略心跳消息
@@ -291,10 +413,14 @@ const handleMessage = (message: any) => {
 const openWebSocket = (runId: string) => {
   // 如果已经有连接，先关闭
   if (wsClient) {
+    manualCloseWs = true;
     wsClient.close();
     wsClient = null;
+    window.setTimeout(() => {
+      manualCloseWs = false;
+    }, 300);
   }
-  const url = `${wsBase}/ws/live?run_id=${runId}`;
+  const url = buildLiveWsUrl(runId, getAuthToken());
   runStore.setWsStatus('connecting');
   wsClient = new ReconnectingWebSocket(
     url,
@@ -304,19 +430,36 @@ const openWebSocket = (runId: string) => {
       lastHeartbeatAt.value = Date.now();
       showToast('实时数据连接成功', 'success');
     },
-    () => {
-      runStore.setWsStatus('closed');
+    (event) => {
+      if (manualCloseWs || !runStore.runId) {
+        runStore.setWsStatus('closed');
+        return;
+      }
+      if (event.code === 1008 || event.code === 4401 || event.code === 4403) {
+        runStore.setWsStatus('closed');
+        showToast('实时连接鉴权失败，请检查配置中的管理令牌', 'error', 5000);
+        return;
+      }
+      runStore.setWsStatus('connecting');
     }
   );
 };
 
 const closeWebSocket = () => {
+  manualCloseWs = true;
   if (wsClient) { wsClient.close(); wsClient = null; }
+  window.setTimeout(() => {
+    manualCloseWs = false;
+  }, 300);
   runStore.setWsStatus('closed');
   lastHeartbeatAt.value = null;
 };
 
 const toggleRun = async () => {
+  if (isRunActionPending.value) {
+    return;
+  }
+  isRunActionPending.value = true;
   if (isRunning.value) {
     const runId = runStore.runId;
     closeWebSocket();
@@ -326,16 +469,22 @@ const toggleRun = async () => {
         showToast('播种任务已停止', 'success');
       } catch (e) {
         console.error('Stop run failed', e);
-        showToast('停止任务失败，请重试', 'error');
+        if (isAuthError(e)) {
+          showToast('停止失败：鉴权无效，请检查管理令牌', 'error');
+        } else {
+          showToast('停止任务失败，请重试', 'error');
+        }
       }
     }
     runStore.setRunId(null);
+    isRunActionPending.value = false;
     return;
   }
   try {
     // 调用 start API，后端会自动返回现有活跃任务或创建新任务
-    const response = await http.post('/runs/start', { machine_id: machineId });
+    const response = await http.post('/runs/start', {});
     const runId = response.data?.run_id;
+    currentTaskName.value = response.data?.run_name || '';
     if (!runId) {
       showToast('创建任务失败，请重试', 'error');
       return;
@@ -355,7 +504,13 @@ const toggleRun = async () => {
     showToast('播种任务已开始', 'success');
   } catch (e) {
     console.error('Start run failed', e);
-    showToast('启动任务失败，请检查网络连接', 'error');
+    if (isAuthError(e)) {
+      showToast('启动失败：鉴权无效，请检查管理令牌', 'error');
+    } else {
+      showToast('启动任务失败，请检查网络连接', 'error');
+    }
+  } finally {
+    isRunActionPending.value = false;
   }
 };
 
@@ -389,7 +544,7 @@ const checkActiveRun = async () => {
     }
 
     // 查找活跃任务
-    const response = await http.get('/runs', { params: { days: 1, machine_id: machineId } });
+    const response = await http.get('/runs', { params: { days: 1 } });
     const runs = response.data || [];
     const activeRun = runs.find((run: any) => !run.ended_at);
     if (activeRun) {
@@ -408,12 +563,16 @@ const checkActiveRun = async () => {
 
 // 手动同步任务状态
 const manualSync = async () => {
+  if (isSyncPending.value || isRunActionPending.value) {
+    return;
+  }
+  isSyncPending.value = true;
   console.log('[SYNC] Manual sync triggered');
   showToast('正在同步任务状态...', 'info');
 
   try {
     // 查找活跃任务
-    const response = await http.get('/runs', { params: { days: 1, machine_id: machineId } });
+    const response = await http.get('/runs', { params: { days: 1 } });
     const runs = response.data || [];
     const activeRun = runs.find((run: any) => !run.ended_at);
 
@@ -452,11 +611,30 @@ const manualSync = async () => {
     }
   } catch (e) {
     console.error('[SYNC] Manual sync failed', e);
-    showToast('同步失败，请检查网络连接', 'error');
+    if (isAuthError(e)) {
+      showToast('同步失败：鉴权无效，请检查管理令牌', 'error');
+    } else {
+      showToast('同步失败，请检查网络连接', 'error');
+    }
+  } finally {
+    isSyncPending.value = false;
   }
 };
 
 onMounted(async () => {
+  window.addEventListener('pointermove', onGlobalPointerMove);
+  window.addEventListener('pointerup', onGlobalPointerUp);
+  const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+  if (savedTheme === 'paper' || savedTheme === 'landscape' || savedTheme === 'pattern') {
+    activeTheme.value = savedTheme;
+  }
+  const savedOpacity = localStorage.getItem(OPACITY_STORAGE_KEY);
+  if (savedOpacity !== null) {
+    const parsed = Number(savedOpacity);
+    if (!Number.isNaN(parsed)) {
+      bgOpacity.value = Math.max(0, Math.min(1, parsed));
+    }
+  }
   setTimeout(initMap, 500);
   // 自动检测活跃任务
   await checkActiveRun();
@@ -470,35 +648,94 @@ onMounted(async () => {
   }, 5000);
 });
 onBeforeUnmount(() => {
+  window.removeEventListener('pointermove', onGlobalPointerMove);
+  window.removeEventListener('pointerup', onGlobalPointerUp);
+  if (toastTimer) {
+    window.clearTimeout(toastTimer);
+    toastTimer = null;
+  }
   if (heartbeatTimer) {
     window.clearInterval(heartbeatTimer);
     heartbeatTimer = null;
   }
   closeWebSocket();
 });
+
+watch(activeTheme, (value) => {
+  localStorage.setItem(THEME_STORAGE_KEY, value);
+});
+
+watch(bgOpacity, (value) => {
+  localStorage.setItem(OPACITY_STORAGE_KEY, String(value));
+});
 </script>
 
 
 <style scoped>
-.monitor-container { font-family: "Microsoft YaHei", sans-serif; width: 100%; max-width: 100%; min-height: 100vh; margin: 0; background-color: #fff; display: flex; flex-direction: column; }
-.header { display: flex; align-items: center; padding: 10px 20px; border-bottom: 2px solid #ccc; gap: 20px; }
-.logo-section .logo { height: 60px; margin-right: 20px; }
-.title-section h1 { font-size: 28px; margin: 0; letter-spacing: 2px; color: #000; font-weight: bold; }
+.monitor-container {
+  font-family: var(--font-main);
+  width: 100%;
+  max-width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  background-color: var(--c-bg-page);
+  display: flex;
+  flex-direction: column;
+  color: var(--c-text-primary);
+  position: relative;
+  isolation: isolate;
+}
+.monitor-container::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: var(--antique-opacity, 0.22);
+  background-image:
+    var(--theme-image),
+    radial-gradient(circle at 15% 18%, rgba(133, 94, 66, 0.28) 0, rgba(133, 94, 66, 0.05) 28%, transparent 45%),
+    radial-gradient(circle at 82% 22%, rgba(150, 105, 74, 0.22) 0, rgba(150, 105, 74, 0.04) 30%, transparent 50%),
+    radial-gradient(circle at 24% 84%, rgba(123, 84, 58, 0.2) 0, rgba(123, 84, 58, 0.03) 25%, transparent 45%),
+    linear-gradient(135deg, rgba(248, 238, 220, 0.72) 0%, rgba(241, 227, 200, 0.38) 55%, rgba(232, 214, 184, 0.32) 100%);
+  background-size: cover, auto, auto, auto, auto;
+  background-position: center center, center, center, center, center;
+  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat;
+}
+.header { position: relative; z-index: 1; display: flex; align-items: center; padding: 10px 18px; border-bottom: 1px solid var(--c-border); gap: 14px; background: rgba(255, 255, 255, 0.86); box-shadow: var(--shadow-sm); backdrop-filter: blur(2px); }
+.logo-section .logo { height: 72px; max-width: 460px; width: auto; margin-right: 8px; object-fit: contain; }
+.title-section { flex: 1; min-width: 0; }
+.title-section h1 { font-size: 26px; margin: 0; letter-spacing: 0.4px; color: var(--c-text-primary); font-weight: 800; line-height: 1.2; }
+.style-controls { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid #b08962; background: linear-gradient(135deg, #ead6bb 0%, #d9bea0 100%); border-radius: 999px; color: #5f4329; font-size: 12px; font-weight: 700; box-shadow: inset 0 -1px 0 rgba(99, 68, 42, 0.2); }
+.style-controls select {
+  border: 1px solid #b08962;
+  border-radius: 999px;
+  background: #f4e6d4;
+  color: #5f4329;
+  font-size: 12px;
+  padding: 4px 8px;
+  outline: none;
+}
+.style-controls input { width: 88px; accent-color: #8c5d31; }
 .header-actions { margin-left: auto; display: flex; gap: 10px; }
-.action-btn { padding: 8px 16px; border: 1px solid #666; background: #f5f5f5; cursor: pointer; font-size: 14px; border-radius: 4px; transition: all 0.2s; }
-.action-btn:hover { background: #e0e0e0; }
-.action-btn.active { background: #ff6b6b; color: white; border-color: #ff6b6b; }
+.action-btn { padding: 10px 18px; border: 1px solid #a47a51; background: linear-gradient(140deg, #f2e1cc 0%, #e3c7a6 100%); cursor: pointer; font-size: 16px; border-radius: 999px; transition: all 0.2s; color: #5d3f24; font-weight: 700; white-space: nowrap; box-shadow: inset 0 -1px 0 rgba(100, 68, 38, 0.18); }
+.action-btn:hover { background: linear-gradient(140deg, #f6e8d8 0%, #e9d1b4 100%); border-color: #8f653f; }
+.action-btn.active { background: #dc2626; color: white; border-color: #dc2626; }
+.action-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* 任务状态栏 */
 .task-status-bar {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 12px;
   padding: 10px 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-bottom: 2px solid #5a67d8;
+  background: linear-gradient(90deg, #1e3a8a 0%, #1d4ed8 100%);
+  border-bottom: 1px solid #1e3a8a;
   color: white;
   font-size: 14px;
+  flex-wrap: wrap;
 }
 
 .status-item {
@@ -514,7 +751,7 @@ onBeforeUnmount(() => {
 
 .status-value {
   font-weight: 600;
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.16);
   padding: 4px 10px;
   border-radius: 4px;
   font-family: 'Courier New', monospace;
@@ -540,24 +777,97 @@ onBeforeUnmount(() => {
   color: #ffcdd2;
 }
 
-.main-content { display: flex; flex-direction: row; border: 2px dashed #333; margin: 20px; min-height: calc(100vh - 140px); flex: 1; }
-.left-panel { flex: 3; padding: 30px 30px 20px 30px; display: flex; flex-direction: column; justify-content: center; }
-.section-title { text-align: center; font-size: 24px; font-weight: bold; color: #000; margin: 0 0 30px 0; }
-.right-panel { flex: 2; border-left: 2px solid #000; padding: 20px; display: flex; flex-direction: column; }
-.data-grid { display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; }
-.data-row { display: flex; align-items: center; width: 48%; margin-bottom: 20px; }
+.main-content { position: relative; z-index: 1; display: grid; grid-template-columns: 1.4fr 1fr; border: 1px solid rgba(157, 176, 200, 0.7); margin: 12px; min-height: calc(100vh - 110px); flex: 1; background: rgba(255, 255, 255, 0.72); box-shadow: var(--shadow-md); border-radius: 14px; overflow: hidden; backdrop-filter: blur(1px); }
+.left-panel { position: relative; padding: 16px 14px 12px; display: flex; flex-direction: column; min-height: 0; }
+.section-title { text-align: left; font-size: 24px; font-weight: 800; color: var(--c-text-primary); margin: 0 0 12px 0; }
+.cistanche-mascot {
+  position: absolute;
+  left: 20px;
+  bottom: 20px;
+  width: 86px;
+  height: 122px;
+  cursor: grab;
+  opacity: 0.82;
+  z-index: 3;
+  touch-action: none;
+  user-select: none;
+}
+.cistanche-mascot:active { cursor: grabbing; }
+.mascot-stem {
+  position: absolute;
+  left: 16px;
+  bottom: 0;
+  width: 56px;
+  height: 96px;
+  border-radius: 28px 28px 18px 18px;
+  background: linear-gradient(180deg, #d18d56 0%, #af6d3f 68%, #93552f 100%);
+  box-shadow: inset 0 -6px 0 rgba(0, 0, 0, 0.08), inset 8px 0 0 rgba(255, 255, 255, 0.15);
+}
+.mascot-cap {
+  position: absolute;
+  left: 8px;
+  bottom: 78px;
+  width: 72px;
+  height: 34px;
+  border-radius: 32px;
+  background: linear-gradient(180deg, #e3a56a 0%, #ba7a49 100%);
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.08);
+}
+.mascot-eye {
+  position: absolute;
+  bottom: 42px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #3d2a1d;
+}
+.mascot-eye.left { left: 34px; }
+.mascot-eye.right { left: 48px; }
+.mascot-smile {
+  position: absolute;
+  left: 36px;
+  bottom: 30px;
+  width: 12px;
+  height: 8px;
+  border-bottom: 2px solid #5a3b26;
+  border-radius: 0 0 10px 10px;
+}
+.aroma-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+.aroma-particle {
+  position: absolute;
+  width: 12px;
+  height: 18px;
+  background: linear-gradient(160deg, rgba(255, 237, 181, 0.95) 0%, rgba(236, 191, 113, 0.9) 45%, rgba(196, 142, 73, 0.82) 100%);
+  border-radius: 82% 22% 70% 30% / 70% 36% 64% 30%;
+  transform-origin: 50% 100%;
+  box-shadow: inset -1px -1px 0 rgba(123, 84, 43, 0.22), 0 1px 2px rgba(121, 88, 52, 0.24);
+  animation: aroma-rise var(--duration) ease-out forwards;
+}
+@keyframes aroma-rise {
+  0% { transform: translate(0, 0) rotate(-8deg) scale(0.72); opacity: 0.95; }
+  35% { opacity: 0.8; }
+  100% { transform: translate(var(--drift), -76px) rotate(26deg) scale(1.1); opacity: 0; }
+}
+.right-panel { border-left: 1px solid rgba(157, 176, 200, 0.7); padding: 14px; display: flex; flex-direction: column; background: rgba(248, 251, 255, 0.75); }
+.data-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(5, minmax(0, 1fr)); gap: 14px; flex: 1; min-height: 0; }
+.data-row { display: grid; grid-template-columns: 138px 1fr auto auto; align-items: center; width: 100%; margin-bottom: 0; padding: 10px 12px; border: 1px solid rgba(226, 232, 240, 0.85); border-radius: 10px; background: rgba(255, 255, 255, 0.82); height: 100%; min-height: 78px; }
 .data-row.full-width { width: 100%; }
-.data-row label { font-size: 20px; width: 160px; text-align: right; margin-right: 10px; color: #000; font-weight: 500; }
-.value-box { background-color: #5b9bd5; border: 1px solid #333; border-radius: 8px; height: 45px; flex-grow: 1; display: flex; align-items: center; justify-content: center; color: white; font-size: 22px; font-weight: bold; box-shadow: 2px 2px 5px rgba(0,0,0,0.2); }
-.unit { font-size: 20px; margin-left: 10px; width: 40px; font-style: italic; font-family: "Times New Roman", serif; color: #000; }
-.alarm-light { width: 20px; height: 20px; border-radius: 50%; background-color: #4caf50; margin-left: 10px; box-shadow: 0 0 5px rgba(0,0,0,0.3); transition: background-color 0.3s; }
-.alarm-light.active { background-color: #f44336; box-shadow: 0 0 10px #f44336; }
-.map-title { text-align: center; font-size: 26px; margin-bottom: 10px; margin-top: 0; color: #000; font-weight: bold; }
-.coords-info { display: flex; justify-content: space-around; font-size: 20px; margin-bottom: 15px; color: #000; }
-.map-border { flex-grow: 1; border: 2px solid #999; position: relative; min-height: 300px; }
+.data-row label { font-size: 15px; width: auto; text-align: left; margin-right: 0; color: #334155; font-weight: 700; }
+.value-box { background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%); border: 1px solid #1e40af; border-radius: 9px; height: 40px; display: flex; align-items: center; justify-content: center; color: white; font-size: 23px; font-weight: 800; letter-spacing: 0.2px; box-shadow: inset 0 -2px 0 rgba(0,0,0,0.15); }
+.unit { font-size: 13px; margin-left: 8px; width: 38px; font-style: normal; font-family: var(--font-main); color: #475569; font-weight: 700; text-align: center; }
+.alarm-light { width: 16px; height: 16px; border-radius: 50%; background-color: var(--c-success); margin-left: 8px; box-shadow: 0 0 0 3px rgba(46,125,50,0.12); transition: background-color 0.3s; }
+.alarm-light.active { background-color: var(--c-danger); box-shadow: 0 0 10px var(--c-danger); }
+.map-title { text-align: left; font-size: 26px; margin-bottom: 8px; margin-top: 0; color: var(--c-text-primary); font-weight: 800; }
+.coords-info { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 16px; margin-bottom: 8px; color: #334155; background: rgba(255, 255, 255, 0.85); border: 1px solid rgba(215, 227, 240, 0.9); border-radius: 10px; padding: 8px 10px; white-space: nowrap; }
+.map-border { flex-grow: 1; border: 1px solid var(--c-border-strong); position: relative; min-height: 300px; border-radius: 10px; overflow: hidden; box-shadow: var(--shadow-sm); height: min(68vh, 760px); }
 #baidu-map-container { width: 100%; height: 100%; background-color: #f0f0f0; }
-.map-switch-btn { position: absolute; top: 10px; right: 10px; z-index: 999; padding: 8px 15px; background-color: rgba(255, 255, 255, 0.9); border: 1px solid #999; border-radius: 4px; font-size: 14px; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.3); font-weight: bold; }
-.map-switch-btn:hover { background-color: #e6e6e6; }
+.map-switch-btn { position: absolute; top: 10px; right: 10px; z-index: 999; padding: 8px 12px; background-color: rgba(255, 255, 255, 0.96); border: 1px solid var(--c-border); border-radius: 999px; font-size: 13px; cursor: pointer; box-shadow: var(--shadow-sm); font-weight: 700; color: var(--c-text-primary); }
+.map-switch-btn:hover { background-color: #eef4fb; }
 
 /* Toast 样式 */
 .toast {
@@ -619,22 +929,28 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 900px) {
-  .header { flex-direction: column; text-align: center; }
+  .header { flex-direction: column; text-align: center; gap: 10px; }
   .logo-section .logo { margin-right: 0; margin-bottom: 5px; height: 40px; }
-  .title-section h1 { font-size: 18px; margin-bottom: 5px; }
+  .title-section h1 { font-size: 26px; margin-bottom: 5px; }
+  .style-controls { order: 3; width: 100%; justify-content: center; }
   .header-actions { margin-left: 0; flex-wrap: wrap; justify-content: center; }
-  .main-content { flex-direction: column; margin: 5px; border: 1px dashed #ccc; }
-  .left-panel { padding: 10px; border-bottom: 1px solid #eee; }
-  .data-grid { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
-  .data-row { width: 48%; margin-bottom: 0; flex-wrap: wrap; justify-content: center; border: 1px solid #eee; border-radius: 6px; padding: 8px 4px; background-color: rgba(240, 240, 240, 0.5); }
-  .data-row.full-width { width: 100%; }
-  .single-row { width: 100%; }
-  .data-row label { width: 100%; text-align: center; margin-right: 0; font-size: 13px; margin-bottom: 5px; color: #333; }
-  .value-box { height: 35px; font-size: 18px; min-width: 60px; }
-  .unit { font-size: 12px; margin-left: 4px; width: auto; }
-  .right-panel { border-left: none; padding: 10px; height: 400px; }
-  .map-title { font-size: 18px; }
-  .coords-info { font-size: 12px; flex-direction: column; align-items: center; gap: 6px; }
+  .action-btn { font-size: 13px; padding: 8px 12px; }
+  .main-content { grid-template-columns: 1fr; margin: 8px; min-height: calc(100vh - 92px); }
+  .left-panel { padding: 10px; border-bottom: 1px solid #e7edf4; }
+  .section-title { font-size: 22px; }
+  .data-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(5, minmax(0, 1fr)); gap: 10px; }
+  .data-row { grid-template-columns: 1fr; grid-template-areas: 'label' 'value'; gap: 6px; padding: 8px; min-height: 92px; }
+  .data-row label { grid-area: label; font-size: 13px; text-align: center; }
+  .value-box { grid-area: value; height: 34px; font-size: 17px; }
+  .unit { position: absolute; right: 8px; bottom: 8px; font-size: 11px; }
+  .alarm-light { position: absolute; right: 8px; top: 8px; width: 12px; height: 12px; margin-left: 0; }
+  .data-row { position: relative; }
+  .cistanche-mascot { display: none; }
+  .aroma-layer { display: none; }
+  .right-panel { border-left: none; padding: 10px; min-height: 420px; }
+  .map-title { font-size: 20px; }
+  .coords-info { font-size: 13px; flex-direction: column; align-items: flex-start; white-space: normal; }
+  .map-switch-btn { font-size: 12px; }
   .toast { top: 60px; min-width: 150px; max-width: 90%; font-size: 12px; padding: 10px 16px; }
 }
 </style>

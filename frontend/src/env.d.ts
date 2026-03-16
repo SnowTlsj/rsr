@@ -3,8 +3,13 @@
 interface ImportMetaEnv {
   readonly VITE_API_BASE: string
   readonly VITE_WS_BASE: string
-  readonly VITE_MACHINE_ID: string
+  readonly VITE_AUTH_TOKEN: string
+  readonly VITE_ALLOWED_HOSTS: string
+  readonly VITE_API_PROXY_TARGET: string
+  readonly VITE_HMR_CLIENT_PORT: string
   readonly VITE_BAIDU_AK: string
+  readonly VITE_DEFAULT_LONGITUDE: string
+  readonly VITE_DEFAULT_LATITUDE: string
 }
 
 interface ImportMeta {
