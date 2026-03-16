@@ -1,6 +1,6 @@
 <template>
   <Transition name="toast">
-    <div v-if="visible" class="toast" :class="type">
+    <div v-if="visible && message" class="toast" :class="type">
       <div class="toast-content">
         <span class="toast-icon">{{ icon }}</span>
         <span class="toast-message">{{ message }}</span>
@@ -10,16 +10,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { computed } from 'vue';
 
 const props = defineProps<{
+  visible: boolean;
   message: string;
   type?: 'success' | 'error' | 'warning' | 'info';
-  duration?: number;
 }>();
-
-const visible = ref(false);
-let timer: number | null = null;
 
 const icon = computed(() => {
   switch (props.type) {
@@ -31,19 +28,6 @@ const icon = computed(() => {
   }
 });
 
-const show = () => {
-  visible.value = true;
-  if (timer) clearTimeout(timer);
-  timer = window.setTimeout(() => {
-    visible.value = false;
-  }, props.duration || 3000);
-};
-
-watch(() => props.message, () => {
-  if (props.message) show();
-}, { immediate: true });
-
-defineExpose({ show });
 </script>
 
 <style scoped>
@@ -105,4 +89,3 @@ defineExpose({ show });
   transform: translateX(-50%) translateY(-20px);
 }
 </style>
-

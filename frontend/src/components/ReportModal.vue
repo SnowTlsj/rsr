@@ -52,6 +52,9 @@
             <div class="gps-item"><span class="label">起始位置：</span><span class="value">{{ report.start_location }}</span></div>
             <div class="gps-item"><span class="label">结束位置：</span><span class="value">{{ report.end_location }}</span></div>
           </div>
+          <div v-if="report.map_preview_url" class="map-preview">
+            <img :src="report.map_preview_url" alt="GPS轨迹静态地图预览" />
+          </div>
         </section>
 
         <section class="report-section">
@@ -70,17 +73,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, nextTick } from 'vue';
+import { computed, ref, watch, nextTick, onBeforeUnmount } from 'vue';
 import * as echarts from 'echarts';
-
-interface ReportData {
-  run_name: string; started_at: string; ended_at: string; duration: string;
-  total_seed_kg: string; total_distance_km: string; leak_distance_km: string; avg_speed_kmh: string;
-  uniformity_index: string;
-  channel1_kg: string; channel2_kg: string; channel3_kg: string; channel4_kg: string; channel5_kg: string;
-  alarm_blocked_count: number; alarm_no_seed_count: number; gps_point_count: number;
-  start_location: string; end_location: string; trend_data?: any[];
-}
+import type { ReportData } from '@/types/history';
 
 const props = defineProps<{ visible: boolean; report: ReportData; exporting?: boolean }>();
 const emit = defineEmits<{ (e: 'close'): void; (e: 'export-pdf'): void; (e: 'export-excel'): void; }>();
@@ -88,6 +83,7 @@ const emit = defineEmits<{ (e: 'close'): void; (e: 'export-pdf'): void; (e: 'exp
 const reportBody = ref<HTMLElement | null>(null);
 const chartContainer = ref<HTMLElement | null>(null);
 let chartInstance: any = null;
+let resizeHandler: (() => void) | null = null;
 const isExporting = computed(() => !!props.exporting);
 
 const formatTime = (value: string) => { if (!value) return '-'; return new Date(value).toLocaleString('zh-CN'); };
@@ -113,9 +109,36 @@ const initChart = () => {
     ]
   };
   chartInstance.setOption(option);
+  resizeHandler = () => chartInstance?.resize();
+  window.addEventListener('resize', resizeHandler);
 };
 
-watch(() => props.visible, async (newVal) => { if (newVal) { await nextTick(); initChart(); } });
+watch(() => props.visible, async (newVal) => {
+  if (newVal) {
+    await nextTick();
+    initChart();
+    return;
+  }
+  if (resizeHandler) {
+    window.removeEventListener('resize', resizeHandler);
+    resizeHandler = null;
+  }
+  if (chartInstance) {
+    chartInstance.dispose();
+    chartInstance = null;
+  }
+});
+
+onBeforeUnmount(() => {
+  if (resizeHandler) {
+    window.removeEventListener('resize', resizeHandler);
+    resizeHandler = null;
+  }
+  if (chartInstance) {
+    chartInstance.dispose();
+    chartInstance = null;
+  }
+});
 </script>
 
 <style scoped>
@@ -154,6 +177,8 @@ watch(() => props.visible, async (newVal) => { if (newVal) { await nextTick(); i
 .gps-item { display: flex; padding: 10px; background: var(--c-bg-muted); border-radius: 4px; }
 .gps-item .label { font-weight: 500; color: var(--c-text-primary); min-width: 120px; }
 .gps-item .value { color: var(--c-text-primary); }
+.map-preview { margin-top: 14px; border: 1px solid var(--c-border); border-radius: 10px; overflow: hidden; background: #fff; }
+.map-preview img { display: block; width: 100%; height: auto; }
 .chart-container { width: 100%; height: 300px; background: var(--c-bg-muted); border-radius: 8px; border: 1px solid var(--c-border); }
 .report-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 20px; border-top: 1px solid var(--c-border); }
 .btn-primary, .btn-secondary { padding: 10px 20px; border: none; border-radius: 4px; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; }

@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -77,3 +77,9 @@ class GpsPoint(Base):
 
 Index("ix_telemetry_run_ts", TelemetrySample.run_id, TelemetrySample.ts)
 Index("ix_gps_run_ts", GpsPoint.run_id, GpsPoint.ts)
+Index(
+    "uq_runs_single_active",
+    text("1"),
+    unique=True,
+    postgresql_where=text("ended_at IS NULL"),
+)

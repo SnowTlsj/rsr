@@ -11,6 +11,14 @@ class RunStartRequest(BaseModel):
     pass
 
 
+class AdminSessionRequest(BaseModel):
+    token: str
+
+
+class AuthSessionStatus(BaseModel):
+    authenticated: bool
+
+
 class RunStartResponse(BaseModel):
     run_id: UUID
     run_name: str

@@ -3,7 +3,6 @@
 interface ImportMetaEnv {
   readonly VITE_API_BASE: string
   readonly VITE_WS_BASE: string
-  readonly VITE_AUTH_TOKEN: string
   readonly VITE_ALLOWED_HOSTS: string
   readonly VITE_API_PROXY_TARGET: string
   readonly VITE_HMR_CLIENT_PORT: string

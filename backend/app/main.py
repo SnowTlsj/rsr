@@ -1,8 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import logging
-import secrets
+from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
@@ -12,6 +12,7 @@ from sqlalchemy import delete, select, text, update
 
 from app.api import routes
 from app.core.config import settings
+from app.core.security import websocket_require_admin_session
 from app.db.models import Run
 from app.db.session import async_session_factory
 from app.services.ingest_queue import Broadcaster, IngestQueue
@@ -23,21 +24,43 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
+broadcaster = Broadcaster()
+ingest_queue = IngestQueue(broadcaster)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("Application startup")
+    routes.router.broadcaster = broadcaster
+    routes.router.ingest_queue = ingest_queue
+    tasks = [
+        asyncio.create_task(broadcaster.telemetry_loop(), name="telemetry_loop"),
+        asyncio.create_task(broadcaster.gps_loop(), name="gps_loop"),
+        asyncio.create_task(ingest_queue.worker_loop(), name="ingest_worker"),
+        asyncio.create_task(_retention_loop(), name="retention_loop"),
+        asyncio.create_task(_timeout_check_loop(), name="timeout_loop"),
+    ]
+    app.state.background_tasks = tasks
+    try:
+        yield
+    finally:
+        logger.info("Application shutdown")
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
+            with suppress(asyncio.CancelledError):
+                await task
+
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_allow_origins,
+    allow_origins=settings.cors_allow_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-broadcaster = Broadcaster()
-ingest_queue = IngestQueue(broadcaster)
-
-routes.router.broadcaster = broadcaster
-routes.router.ingest_queue = ingest_queue
 
 app.include_router(routes.router)
 
@@ -58,38 +81,11 @@ async def readyz() -> dict[str, str]:
         raise HTTPException(status_code=503, detail="Database not ready") from exc
 
 
-@app.on_event("startup")
-async def startup() -> None:
-    logger.info("Application startup")
-    if settings.admin_token == "dev-admin-token" or settings.ingest_token == "devtoken":
-        logger.warning("Using default tokens in runtime. Please override ADMIN_TOKEN/INGEST_TOKEN in production.")
-    app.state.telemetry_task = asyncio.create_task(broadcaster.telemetry_loop())
-    app.state.gps_task = asyncio.create_task(broadcaster.gps_loop())
-    app.state.worker_task = asyncio.create_task(ingest_queue.worker_loop())
-    app.state.retention_task = asyncio.create_task(_retention_loop())
-    app.state.timeout_task = asyncio.create_task(_timeout_check_loop())
-
-
-@app.on_event("shutdown")
-async def shutdown() -> None:
-    logger.info("Application shutdown")
-    for task in [
-        app.state.telemetry_task,
-        app.state.gps_task,
-        app.state.worker_task,
-        app.state.retention_task,
-        app.state.timeout_task,
-    ]:
-        task.cancel()
-
-
 @app.websocket("/ws/live")
-async def ws_live(websocket: WebSocket, run_id: str, token: str | None = None) -> None:
-    if not token or not secrets.compare_digest(token, settings.admin_token):
-        await websocket.close(code=1008)
-        return
-
+async def ws_live(websocket: WebSocket, run_id: str) -> None:
+    await websocket_require_admin_session(websocket)
     await websocket.accept()
+
     try:
         run_uuid = UUID(run_id)
     except ValueError:

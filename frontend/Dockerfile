@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:20-alpine AS build
 
 WORKDIR /app
 
@@ -13,8 +13,17 @@ WORKDIR /app/frontend
 RUN npm install --prefer-offline --no-audit --no-fund
 
 COPY frontend /app/frontend
-WORKDIR /app/frontend
+RUN npm run build
 
-EXPOSE 5173
+FROM nginx:1.27-alpine
 
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/frontend/dist /usr/share/nginx/html
+COPY frontend/public/themes /usr/share/nginx/html/themes
+RUN chmod -R 755 /usr/share/nginx/html \
+    && find /usr/share/nginx/html/themes -type f -exec chmod 644 {} \; \
+    && chown -R nginx:nginx /usr/share/nginx/html
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]

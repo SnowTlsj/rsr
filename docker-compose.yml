@@ -38,14 +38,12 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
-    env_file:
-      - frontend/.env
     depends_on:
       backend:
         condition: service_healthy
     restart: unless-stopped
     ports:
-      - "5174:5173"
+      - "5174:80"
 
 volumes:
   db_data:

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -166,18 +168,98 @@ class IngestQueue:
                     gps_latest.clear()
 
                 if batch_telemetry or batch_gps:
-                    await self._flush(batch_telemetry, batch_gps)
+                    try:
+                        await self._flush(batch_telemetry, batch_gps)
+                    except Exception:
+                        logger.error("Batch moved to dead letter after flush failure")
                     batch_telemetry.clear()
                     batch_gps.clear()
                 last_flush = time.monotonic()
 
     async def _flush(self, telemetry_rows: list[dict[str, Any]], gps_rows: list[dict[str, Any]]) -> None:
-        async with async_session_factory() as session:
-            if telemetry_rows:
-                await session.execute(insert(TelemetrySample), telemetry_rows)
-            if gps_rows:
-                await session.execute(insert(GpsPoint), gps_rows)
-            await session.commit()
+        started = time.monotonic()
+        for attempt in range(1, 4):
+            try:
+                async with async_session_factory() as session:
+                    if telemetry_rows:
+                        await session.execute(insert(TelemetrySample), telemetry_rows)
+                    if gps_rows:
+                        await session.execute(insert(GpsPoint), gps_rows)
+                    await session.commit()
+
+                await self._broadcast_committed_rows(telemetry_rows, gps_rows)
+                logger.info(
+                    "Ingest flush succeeded telemetry=%s gps=%s duration_ms=%s attempt=%s",
+                    len(telemetry_rows),
+                    len(gps_rows),
+                    int((time.monotonic() - started) * 1000),
+                    attempt,
+                )
+                return
+            except Exception as exc:
+                logger.exception(
+                    "Ingest flush failed telemetry=%s gps=%s attempt=%s",
+                    len(telemetry_rows),
+                    len(gps_rows),
+                    attempt,
+                )
+                if attempt >= 3:
+                    await self._write_dead_letter(telemetry_rows, gps_rows, str(exc))
+                    raise
+                await asyncio.sleep(0.25 * attempt)
+
+    async def _broadcast_committed_rows(
+        self,
+        telemetry_rows: list[dict[str, Any]],
+        gps_rows: list[dict[str, Any]],
+    ) -> None:
+        for row in telemetry_rows:
+            run_id = row["run_id"]
+            channels = [row.get(f"channel{i}_g") for i in range(1, 6)]
+            await self._broadcaster.update_telemetry(
+                run_id,
+                {
+                    "ts": row["ts"].isoformat(),
+                    "seed_channels_g": channels,
+                    "seed_total_g": row.get("seed_total_g"),
+                    "distance_m": row.get("distance_m"),
+                    "leak_distance_m": row.get("leak_distance_m"),
+                    "speed_kmh": row.get("speed_kmh"),
+                    "uniformity_index": row.get("uniformity_index"),
+                    "alarm_blocked": row.get("alarm_blocked"),
+                    "alarm_no_seed": row.get("alarm_no_seed"),
+                    "alarm_channels": [row.get(f"alarm_channel{i}", 0) or 0 for i in range(1, 6)],
+                },
+            )
+        for row in gps_rows:
+            await self._broadcaster.update_gps(
+                row["run_id"],
+                {
+                    "ts": row["ts"].isoformat(),
+                    "lon": row.get("lon"),
+                    "lat": row.get("lat"),
+                },
+            )
+
+    async def _write_dead_letter(
+        self,
+        telemetry_rows: list[dict[str, Any]],
+        gps_rows: list[dict[str, Any]],
+        reason: str,
+    ) -> None:
+        os.makedirs(os.path.dirname(settings.dead_letter_path), exist_ok=True)
+        payload = {
+            "failed_at": datetime.now(timezone.utc).isoformat(),
+            "reason": reason,
+            "telemetry_rows": telemetry_rows,
+            "gps_rows": gps_rows,
+        }
+        serializable = json.dumps(payload, default=str, ensure_ascii=False)
+        await asyncio.to_thread(self._append_dead_letter, serializable)
+
+    def _append_dead_letter(self, line: str) -> None:
+        with open(settings.dead_letter_path, "a", encoding="utf-8") as fp:
+            fp.write(line + "\n")
 
 
 def build_telemetry_row(run_id: UUID, ts: datetime, telemetry: dict[str, Any]) -> dict[str, Any]:

@@ -83,9 +83,18 @@ def stop_run(session: Session, base: str, run_id: str, admin_token: str, timeout
     resp.raise_for_status()
 
 
-def build_payload(step: int, distance_m: float, leak_distance_m: float) -> dict[str, Any]:
-    channels = [round(random.uniform(8.0, 12.0), 2) for _ in range(5)]
-    seed_total = round(sum(channels), 2)
+def build_payload(
+    step: int,
+    distance_m: float,
+    leak_distance_m: float,
+    channel_totals: list[float],
+) -> dict[str, Any]:
+    increments = [random.uniform(0.35, 1.10) for _ in range(5)]
+    for index, delta in enumerate(increments):
+        channel_totals[index] += delta
+
+    channels = [round(value, 2) for value in channel_totals]
+    seed_total = round(sum(channel_totals), 2)
     speed = round(random.uniform(3.0, 6.0), 2)
     alarm_channels = [1 if random.random() < 0.05 else 0 for _ in range(5)]
 
@@ -151,6 +160,7 @@ def main() -> None:
     fail = 0
     distance_m = 0.0
     leak_distance_m = 0.0
+    channel_totals = [0.0] * 5
     t0 = time.time()
 
     try:
@@ -162,7 +172,7 @@ def main() -> None:
             if random.random() < 0.05:
                 leak_distance_m += speed_m_s * interval
 
-            payload = build_payload(step, distance_m, leak_distance_m)
+            payload = build_payload(step, distance_m, leak_distance_m, channel_totals)
             success, status_code = ingest(session, base, args.ingest_token, payload, args.timeout)
             if success:
                 ok += 1
@@ -175,7 +185,7 @@ def main() -> None:
             if step % int(max(args.hz, 1)) == 0:
                 print(
                     f"[STAT] sent={step} ok={ok} fail={fail} "
-                    f"dist={distance_m:.1f}m leak={leak_distance_m:.1f}m"
+                    f"dist={distance_m:.1f}m leak={leak_distance_m:.1f}m total={sum(channel_totals):.1f}g"
                 )
 
             if args.duration > 0 and (time.time() - t0) >= args.duration:

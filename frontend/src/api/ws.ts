@@ -18,12 +18,9 @@ export const resolveWsBase = (): string => {
   return `${proto}//${window.location.host}`;
 };
 
-export const buildLiveWsUrl = (runId: string, token?: string): string => {
+export const buildLiveWsUrl = (runId: string): string => {
   const url = new URL(`${resolveWsBase()}/ws/live`);
   url.searchParams.set('run_id', runId);
-  if (token) {
-    url.searchParams.set('token', token);
-  }
   return url.toString();
 };
 

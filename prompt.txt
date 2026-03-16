@@ -10,9 +10,9 @@
 2. 前端默认使用相对路径：
    - HTTP：`/api/v1`
    - WebSocket：按 `window.location` 推导 `ws/wss`，仅在 `VITE_WS_BASE` 配置时覆盖。
-3. 鉴权统一为 Bearer：
-   - `ADMIN_TOKEN`：管理/查询/报告/WebSocket
-   - `INGEST_TOKEN`：仅 ingest
+3. 鉴权统一为“管理会话 + ingest Bearer”：
+   - 浏览器管理能力先通过 `POST /api/v1/auth/session` 提交 `ADMIN_TOKEN` 建立 HttpOnly Cookie
+   - `INGEST_TOKEN`：仅 ingest，继续使用 Bearer
 4. 数据分区使用固定表 + `run_id`：`runs`、`telemetry_samples`、`gps_points`。
 5. 数据保留 30 天，后台任务每日清理。
 6. 历史/备份目录保留但隔离，不参与构建发布。
@@ -28,7 +28,10 @@
 - `GET /api/v1/runs/{run_id}/telemetry`
 - `GET /api/v1/runs/{run_id}/report.pdf`
 - `POST /api/v1/ingest`
-- `GET /ws/live?run_id=...&token=...`
+- `POST /api/v1/auth/session`
+- `GET /api/v1/auth/session`
+- `DELETE /api/v1/auth/session`
+- `GET /ws/live?run_id=...`
 
 ## 前端约束
 

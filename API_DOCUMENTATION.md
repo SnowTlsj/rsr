@@ -2,25 +2,44 @@
 
 ## 1. 基础信息
 
-- HTTP Base URL：`http://${API_HOST}:8100/api/v1`
-- WebSocket URL：`ws://${API_HOST}:8100/ws/live?run_id={run_id}&token={ADMIN_TOKEN}`
+- 浏览器同源入口：`http://${FRONTEND_HOST}:5174/api/v1`
+- 直连后端入口：`http://${API_HOST}:8100/api/v1`
+- 浏览器 WebSocket：`ws://${FRONTEND_HOST}:5174/ws/live?run_id={run_id}`
+- 直连后端 WebSocket：`ws://${API_HOST}:8100/ws/live?run_id={run_id}`
 - 数据格式：`application/json`
 - 时间格式：ISO8601（UTC）
+
+说明：
+
+- 正式部署时，浏览器优先通过前端 Nginx 访问 `/api/v1` 和 `/ws/live`。
+- 前端 Nginx 会把这些请求反向代理到 backend 容器。
 
 ## 2. 鉴权模型
 
 ### Token 类型
 
 - `ADMIN_TOKEN`
-  - 任务管理、查询、报告、WebSocket
+  - 用于建立管理会话
 - `INGEST_TOKEN`
   - 数据上报
 
 ### 鉴权规则
 
 - 除 `GET /healthz`、`GET /readyz` 外，业务接口均鉴权。
-- HTTP：`Authorization: Bearer <TOKEN>`
-- WebSocket：通过 query 参数 `token` 传入。
+- 浏览器管理接口：
+  - 先调用 `POST /auth/session` 提交 `ADMIN_TOKEN`
+  - 服务端返回 HttpOnly 管理会话 Cookie
+  - 后续 HTTP 与 WebSocket 复用该 Cookie
+- 非浏览器脚本调用管理接口时，也可直接使用 `Authorization: Bearer <ADMIN_TOKEN>`
+- `POST /ingest` 仅接受 `Authorization: Bearer <INGEST_TOKEN>`
+
+### 管理会话接口
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/auth/session` | 查询当前管理会话状态 |
+| POST | `/auth/session` | 创建管理会话 |
+| DELETE | `/auth/session` | 删除管理会话 |
 
 ## 3. 接口总览
 
@@ -36,16 +55,69 @@
 | GET | `/runs/{run_id}/report.pdf` | 下载 PDF 报告 | ADMIN |
 | POST | `/ingest` | 写入 telemetry/gps（异步入队） | INGEST |
 
-## 4. 运行任务接口
+## 4. 管理会话接口
 
-### 4.1 启动任务
+### 4.1 创建会话
+
+`POST /auth/session`
+
+请求体：
+
+```json
+{
+  "token": "change-me-admin-token"
+}
+```
+
+响应：
+
+```json
+{
+  "authenticated": true
+}
+```
+
+说明：
+
+- 成功后服务端会设置 HttpOnly Cookie。
+- 浏览器端后续请求无需再把 `ADMIN_TOKEN` 暴露到前端代码。
+- 浏览器场景建议请求前端同源地址：
+
+```bash
+curl -X POST "http://${FRONTEND_HOST}:5174/api/v1/auth/session" \
+  -H "Content-Type: application/json" \
+  -d "{\"token\":\"${ADMIN_TOKEN}\"}" \
+  -c cookies.txt
+```
+
+### 4.2 查询会话
+
+`GET /auth/session`
+
+响应：
+
+```json
+{
+  "authenticated": true
+}
+```
+
+### 4.3 删除会话
+
+`DELETE /auth/session`
+
+- 成功返回 `204 No Content`
+
+## 5. 运行任务接口
+
+### 5.1 启动任务
 
 `POST /runs/start`
 
 请求头：
 
 ```http
-Authorization: Bearer ${ADMIN_TOKEN}
+Cookie: admin_session=...
 Content-Type: application/json
 ```
 
@@ -70,7 +142,7 @@ Content-Type: application/json
 - 若存在 active run（`ended_at = null`），返回现有任务。
 - 否则创建新任务。
 
-### 4.2 停止任务
+### 5.2 停止任务
 
 `POST /runs/{run_id}/stop`
 
@@ -83,7 +155,7 @@ Content-Type: application/json
 }
 ```
 
-### 4.3 列表查询
+### 5.3 列表查询
 
 `GET /runs?days=30`
 
@@ -104,26 +176,27 @@ Content-Type: application/json
 ]
 ```
 
-### 4.4 详情查询
+### 5.4 详情查询
 
 `GET /runs/{run_id}`
 
-### 4.5 删除任务
+### 5.5 删除任务
 
 `DELETE /runs/{run_id}`
 
 - 成功返回 `204 No Content`
 - 级联删除 telemetry/gps 数据
 
-## 5. 历史数据查询
+## 6. 历史数据查询
 
-### 5.1 GPS 查询
+### 6.1 GPS 查询
 
-`GET /runs/{run_id}/gps?limit=100000`
+`GET /runs/{run_id}/gps?limit=100000&target_points=3000`
 
 参数：
 
 - `limit`：`1 ~ 200000`，默认 `100000`
+- `target_points`：可选，服务端目标降采样点数，适合地图回放
 
 响应：
 
@@ -137,9 +210,9 @@ Content-Type: application/json
 ]
 ```
 
-### 5.2 Telemetry 聚合查询
+### 6.2 Telemetry 聚合查询
 
-`GET /runs/{run_id}/telemetry?bucket=1s&from=...&to=...`
+`GET /runs/{run_id}/telemetry?bucket=5s&from=...&to=...`
 
 参数：
 
@@ -180,16 +253,16 @@ Content-Type: application/json
 ]
 ```
 
-### 5.3 PDF 报告
+### 6.3 PDF 报告
 
 `GET /runs/{run_id}/report.pdf`
 
 - 返回类型：`application/pdf`
 - 文件名：`{run_name}.pdf`
 
-## 6. 数据上报接口
+## 7. 数据上报接口
 
-### 6.1 上报数据
+### 7.1 上报数据
 
 `POST /ingest`
 
@@ -234,13 +307,19 @@ Content-Type: application/json
 {"status":"queued"}
 ```
 
-## 7. WebSocket 实时订阅
+## 8. WebSocket 实时订阅
 
-`GET /ws/live?run_id={run_id}&token={ADMIN_TOKEN}`
+`GET /ws/live?run_id={run_id}`
+
+说明：
+
+- 浏览器端依赖已建立的管理会话 Cookie。
+- 不再通过 query string 传递敏感管理 token。
+- 浏览器默认应连接前端同源 WebSocket 地址，由前端 Nginx 代理到 backend。
 
 消息类型：
 
-### 7.1 telemetry
+### 8.1 telemetry
 
 ```json
 {
@@ -284,8 +363,8 @@ Content-Type: application/json
 
 | 状态码 | 含义 |
 |---|---|
-| `401` | 缺少或格式错误的 Authorization |
-| `403` | Token 无效或权限不足 |
+| `401` | 缺少管理会话或 Authorization 格式错误 |
+| `403` | 会话无效、Token 无效或权限不足 |
 | `404` | run 不存在 |
 | `409` | 无 active run（ingest 场景） |
 | `422` | 参数/数据校验失败 |
@@ -296,8 +375,13 @@ Content-Type: application/json
 ### 9.1 启动任务
 
 ```bash
-curl -X POST "http://${API_HOST}:8100/api/v1/runs/start" \
-  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+curl -X POST "http://${FRONTEND_HOST}:5174/api/v1/auth/session" \
+  -H "Content-Type: application/json" \
+  -d "{\"token\":\"${ADMIN_TOKEN}\"}" \
+  -c cookies.txt
+
+curl -X POST "http://${FRONTEND_HOST}:5174/api/v1/runs/start" \
+  -b cookies.txt \
   -H "Content-Type: application/json" \
   -d "{}"
 ```
@@ -325,7 +409,7 @@ curl -X POST "http://${API_HOST}:8100/api/v1/ingest" \
 
 ```bash
 curl -X POST "http://${API_HOST}:8100/api/v1/runs/${RUN_ID}/stop" \
-  -H "Authorization: Bearer ${ADMIN_TOKEN}"
+  -b cookies.txt
 ```
 
 ## 10. 健康检查接口

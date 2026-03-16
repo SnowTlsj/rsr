@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 
@@ -54,6 +54,7 @@ DDL = [
     """,
     "CREATE INDEX IF NOT EXISTS ix_telemetry_run_ts ON telemetry_samples(run_id, ts)",
     "CREATE INDEX IF NOT EXISTS ix_gps_run_ts ON gps_points(run_id, ts)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_runs_single_active ON runs ((ended_at IS NULL)) WHERE ended_at IS NULL",
 ]
 
 

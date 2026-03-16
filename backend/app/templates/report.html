@@ -4,119 +4,119 @@
     <meta charset="UTF-8" />
     <title>播种报告</title>
     <style>
+      @page {
+        size: A4;
+        margin: 16mm 12mm;
+      }
       body {
         font-family: "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
-        color: #000;
-        margin: 24px;
+        color: #111827;
+        margin: 0;
         background: #fff;
+        font-size: 12px;
+        line-height: 1.45;
       }
       h1 {
-        text-align: left;
-        margin: 0 0 12px;
-        font-size: 20px;
+        margin: 0 0 14px;
+        font-size: 24px;
+        font-weight: 700;
       }
       h2 {
-        font-size: 14px;
-        margin: 14px 0 8px;
-        border-bottom: 2px solid #5b9bd5;
+        margin: 0 0 10px;
+        font-size: 15px;
+        font-weight: 700;
+        color: #0f172a;
+        border-bottom: 2px solid #60a5fa;
         padding-bottom: 6px;
       }
-      .info-grid {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 8px 12px;
-        font-size: 11px;
+      .section {
+        margin-bottom: 16px;
+        page-break-inside: avoid;
       }
-      .info-item {
-        background: #f5f6f8;
-        border-radius: 6px;
+      .table {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+      }
+      .table td,
+      .table th {
+        border: 1px solid #dbe3f4;
         padding: 8px 10px;
+        vertical-align: middle;
+        word-break: break-word;
       }
-      .stats-grid {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 10px;
-        font-size: 11px;
+      .table th {
+        background: #edf4ff;
+        text-align: left;
+        font-weight: 700;
       }
-      .stat-card {
-        border: 1px solid #dbe3f4;
-        border-radius: 8px;
-        padding: 12px 10px;
-        background: #f4f8ff;
+      .muted {
+        color: #475569;
+      }
+      .stats-table td {
+        background: #f8fbff;
         text-align: center;
       }
-      .stat-card .value {
-        font-size: 16px;
-        font-weight: bold;
-        margin-top: 6px;
-      }
-      .channel-row {
-        display: grid;
-        grid-template-columns: repeat(5, minmax(0, 1fr));
-        gap: 8px;
-        margin-top: 8px;
-      }
-      .channel-badge {
-        border: 1px solid #dbe3f4;
-        border-radius: 6px;
-        padding: 6px 8px;
-        background: #f8f9fb;
+      .stats-label {
+        display: block;
+        color: #334155;
         font-size: 11px;
+        margin-bottom: 4px;
+      }
+      .stats-value {
+        display: block;
+        font-size: 20px;
+        font-weight: 700;
+        color: #0f172a;
+      }
+      .channel-table td {
         text-align: center;
+        background: #ffffff;
       }
-      .alarm-row {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 10px;
-      }
-      .alarm-card {
-        border: 1px solid #f7b37a;
-        border-radius: 8px;
-        padding: 10px 12px;
+      .alarm-table td {
         background: #fff7ed;
-        font-size: 11px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
       }
-      .alarm-card .value {
-        font-weight: bold;
-        color: #f97316;
+      .alarm-value {
+        font-weight: 700;
+        color: #ea580c;
       }
-      .gps-grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 8px 12px;
-        font-size: 11px;
-      }
-      .gps-item {
-        background: #f5f6f8;
-        border-radius: 6px;
-        padding: 8px 10px;
-      }
-      .chart-wrap {
-        border: 1px solid #e5e7eb;
+      .map-frame {
+        border: 1px solid #dbe3f4;
         border-radius: 8px;
         padding: 8px;
-        background: #fff;
+        background: #ffffff;
+      }
+      .map-frame img {
+        display: block;
+        width: 100%;
+        height: auto;
+        border-radius: 6px;
+      }
+      .map-caption {
+        margin-top: 6px;
+        font-size: 11px;
+        color: #64748b;
+      }
+      .chart-wrap {
+        border: 1px solid #dbe3f4;
+        border-radius: 8px;
+        padding: 8px;
+        background: #ffffff;
       }
       .legend {
-        display: flex;
-        gap: 10px;
-        font-size: 10px;
         margin-bottom: 6px;
+        font-size: 10px;
       }
-      .legend span::before {
-        content: "";
+      .legend-item {
+        display: inline-block;
+        margin-right: 12px;
+      }
+      .legend-dot {
         display: inline-block;
         width: 8px;
         height: 8px;
         border-radius: 50%;
         margin-right: 4px;
-        background: currentColor;
-      }
-      .section {
-        margin-bottom: 14px;
       }
     </style>
   </head>
@@ -125,51 +125,95 @@
 
     <div class="section">
       <h2>任务信息</h2>
-      <div class="info-grid">
-        <div class="info-item">任务名称：{{ run_name }}</div>
-        <div class="info-item">开始时间：{{ started_at }}</div>
-        <div class="info-item">结束时间：{{ ended_at }}</div>
-        <div class="info-item">作业时长：{{ duration }}</div>
-      </div>
+      <table class="table">
+        <tr>
+          <th>任务名称</th>
+          <td>{{ run_name }}</td>
+          <th>开始时间</th>
+          <td>{{ started_at }}</td>
+        </tr>
+        <tr>
+          <th>结束时间</th>
+          <td>{{ ended_at }}</td>
+          <th>作业时长</th>
+          <td>{{ duration }}</td>
+        </tr>
+      </table>
     </div>
 
     <div class="section">
       <h2>播种统计</h2>
-      <div class="stats-grid">
-        <div class="stat-card"><div>总播种量</div><div class="value">{{ total_seed_kg }} kg</div></div>
-        <div class="stat-card"><div>作业里程</div><div class="value">{{ total_distance_km }} km</div></div>
-        <div class="stat-card"><div>漏播里程</div><div class="value">{{ leak_distance_km }} km</div></div>
-        <div class="stat-card"><div>平均速度</div><div class="value">{{ avg_speed_kmh }} km/h</div></div>
-        <div class="stat-card"><div>匀播指数</div><div class="value">{{ uniformity_index }} g/m</div></div>
-      </div>
+      <table class="table stats-table">
+        <tr>
+          <td><span class="stats-label">总播种量</span><span class="stats-value">{{ total_seed_kg }} kg</span></td>
+          <td><span class="stats-label">作业里程</span><span class="stats-value">{{ total_distance_km }} km</span></td>
+          <td><span class="stats-label">漏播里程</span><span class="stats-value">{{ leak_distance_km }} km</span></td>
+        </tr>
+        <tr>
+          <td><span class="stats-label">平均速度</span><span class="stats-value">{{ avg_speed_kmh }} km/h</span></td>
+          <td><span class="stats-label">匀播指数</span><span class="stats-value">{{ uniformity_index }} g/m</span></td>
+          <td><span class="stats-label muted">说明</span><span class="muted">播种量与里程均取任务结束前最后累计值</span></td>
+        </tr>
+      </table>
     </div>
 
     <div class="section">
       <h2>各通道播种量</h2>
-      <div class="channel-row">
-        <div class="channel-badge">通道1：{{ channel1_kg }} kg</div>
-        <div class="channel-badge">通道2：{{ channel2_kg }} kg</div>
-        <div class="channel-badge">通道3：{{ channel3_kg }} kg</div>
-        <div class="channel-badge">通道4：{{ channel4_kg }} kg</div>
-        <div class="channel-badge">通道5：{{ channel5_kg }} kg</div>
-      </div>
+      <table class="table channel-table">
+        <tr>
+          <th>通道1</th>
+          <th>通道2</th>
+          <th>通道3</th>
+          <th>通道4</th>
+          <th>通道5</th>
+        </tr>
+        <tr>
+          <td>{{ channel1_kg }} kg</td>
+          <td>{{ channel2_kg }} kg</td>
+          <td>{{ channel3_kg }} kg</td>
+          <td>{{ channel4_kg }} kg</td>
+          <td>{{ channel5_kg }} kg</td>
+        </tr>
+      </table>
     </div>
 
     <div class="section">
       <h2>告警统计</h2>
-      <div class="alarm-row">
-        <div class="alarm-card"><span>堵塞告警</span><span class="value">{{ alarm_blocked_count }} 次</span></div>
-        <div class="alarm-card"><span>缺种告警</span><span class="value">{{ alarm_no_seed_count }} 次</span></div>
-      </div>
+      <table class="table alarm-table">
+        <tr>
+          <th>堵塞告警</th>
+          <td class="alarm-value">{{ alarm_blocked_count }} 次</td>
+          <th>缺种告警</th>
+          <td class="alarm-value">{{ alarm_no_seed_count }} 次</td>
+        </tr>
+      </table>
     </div>
 
     <div class="section">
       <h2>GPS 轨迹</h2>
-      <div class="gps-grid">
-        <div class="gps-item">轨迹点数量：{{ gps_point_count }} 个</div>
-        <div class="gps-item">起始位置：{{ start_location }}</div>
-        <div class="gps-item">结束位置：{{ end_location }}</div>
+      <table class="table">
+        <tr>
+          <th>轨迹点数量</th>
+          <td>{{ gps_point_count }} 个</td>
+          <th>起始位置</th>
+          <td>{{ start_location }}</td>
+        </tr>
+        <tr>
+          <th>结束位置</th>
+          <td colspan="3">{{ end_location }}</td>
+        </tr>
+      </table>
+      {% if gps_map_url %}
+      <div class="map-frame">
+        <img src="{{ gps_map_url }}" alt="GPS轨迹静态地图" />
+        <div class="map-caption">静态地图底图展示任务轨迹，绿色为起点，红色为终点。</div>
       </div>
+      {% elif gps_svg %}
+      <div class="map-frame">
+        {{ gps_svg|safe }}
+        <div class="map-caption">轨迹总览图展示了该任务的全部 GPS 轨迹点，绿色为起点，红色为终点。</div>
+      </div>
+      {% endif %}
     </div>
 
     <div class="section">
@@ -177,14 +221,28 @@
       <div class="chart-wrap">
         <div class="legend">
           {% for series in trend_series %}
-            <span style="color: {{ series.color }}">{{ series.name }}</span>
+            <span class="legend-item">
+              <span class="legend-dot" style="background: {{ series.color }}"></span>{{ series.name }}
+            </span>
           {% endfor %}
         </div>
         <svg width="700" height="180" viewBox="0 0 700 180">
-          <rect x="0" y="0" width="700" height="180" fill="#ffffff" stroke="#e5e7eb" />
+          <rect x="0" y="0" width="700" height="180" fill="#ffffff" stroke="#dbe3f4" />
+          <line x1="44" y1="12" x2="44" y2="160" stroke="#94a3b8" stroke-width="1" />
+          <line x1="44" y1="160" x2="680" y2="160" stroke="#94a3b8" stroke-width="1" />
+          {% for tick in trend_y_ticks %}
+            <line x1="44" y1="{{ tick.y }}" x2="680" y2="{{ tick.y }}" stroke="#e2e8f0" stroke-width="1" />
+            <text x="38" y="{{ tick.y + 4 }}" font-size="10" text-anchor="end" fill="#64748b">{{ tick.label }}</text>
+          {% endfor %}
+          {% for tick in trend_x_ticks %}
+            <line x1="{{ tick.x }}" y1="160" x2="{{ tick.x }}" y2="164" stroke="#94a3b8" stroke-width="1" />
+            <text x="{{ tick.x }}" y="176" font-size="10" text-anchor="middle" fill="#64748b">{{ tick.label }}</text>
+          {% endfor %}
           {% for series in trend_series %}
             <polyline fill="none" stroke="{{ series.color }}" stroke-width="2" points="{{ series.points }}"></polyline>
           {% endfor %}
+          <text x="18" y="22" font-size="10" fill="#64748b">g</text>
+          <text x="670" y="176" font-size="10" fill="#64748b">时间</text>
         </svg>
       </div>
     </div>
