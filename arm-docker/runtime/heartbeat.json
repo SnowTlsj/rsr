@@ -1,0 +1,11 @@
+{
+  "ts": "2026-03-17T03:22:25.725934+00:00",
+  "state": "stopped",
+  "current_port": null,
+  "current_run_id": null,
+  "last_valid_frame_at": 0.0,
+  "parsed_frames": 0,
+  "validation_failures": 0,
+  "cache_backlog": 0,
+  "upload_failures": 0
+}
