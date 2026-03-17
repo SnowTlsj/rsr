@@ -19,6 +19,8 @@ coverage
 arm-docker/settings.json
 !.vscode/extensions.json
 .idea
+.env
+frontend/.env
 *.suo
 *.ntvs*
 *.njsproj
