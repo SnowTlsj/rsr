@@ -62,7 +62,7 @@ FRAME_FLOAT_COUNT = 16
 FRAME_SIZE = FRAME_FLOAT_COUNT * 4
 MAX_BUFFER_BYTES = FRAME_SIZE * 8
 ALARM_THRESHOLD = 0.5
-GPS_SCALE = 100000.0
+DATA_SCALE = 10000.0
 FLOAT_ROUND_DIGITS = 2
 GPS_ROUND_DIGITS = 6
 
@@ -75,12 +75,16 @@ STATE_STOPPED = "stopped"
 
 logger = logging.getLogger("rsr.serial_agent")
 
-SAMPLE_FRAME_HEX_LINES = [
-    "4D BF B9 41", "86 47 C4 41", "B2 58 D1 41", "89 45 BF 41",
-    "57 36 C0 41", "00 00 00 00", "C9 20 20 41", "A0 51 2B 42",
-    "5E 98 B2 42", "DE BF 9F 3F", "00 00 00 00", "00 00 00 00",
-    "00 00 00 00", "00 00 00 00", "00 00 00 00", "00 00 00 00",
-]
+SAMPLE_FRAME_VALUES = {
+    "channels": [23.22, 24.53, 26.17, 23.91, 24.03],
+    "speed_kmh": 0.0,
+    "distance_m": 10.01,
+    "lat_ddmm": 4249.78272,
+    "lon_ddmm": 8917.85552,
+    "leak_distance_m": 1.25,
+    "uniformity_index": 0.0,
+    "alarm_channels": [0, 0, 0, 0, 0],
+}
 
 
 class NoActiveRunError(RuntimeError):
@@ -268,6 +272,21 @@ def setup_logging(config: AppConfig) -> None:
     logger.addHandler(file_handler)
 
 
+def log_config_summary(config: AppConfig) -> None:
+    logger.info(
+        "配置摘要: api=%s serial_baudrate=%s serial_timeout=%.2f stable_frames=%s idle_stop=%.1fs cache=%s log=%s heartbeat=%s debug=%s",
+        config.base_url,
+        config.serial_baudrate,
+        config.serial_timeout,
+        config.serial_stable_frame_count,
+        config.run_idle_stop_sec,
+        config.failed_cache_path,
+        config.log_file,
+        config.heartbeat_path,
+        config.debug_log,
+    )
+
+
 def round2(value: float) -> float:
     return round(float(value), FLOAT_ROUND_DIGITS)
 
@@ -282,8 +301,23 @@ def parse_float_le(chunk4: bytes) -> float:
     return struct.unpack("<f", chunk4)[0]
 
 
+def decode_scaled_value(raw_value: float) -> float:
+    return round2(raw_value / DATA_SCALE)
+
+
+def ddmm_to_decimal_degrees(ddmm_value: float) -> float:
+    abs_value = abs(ddmm_value)
+    degrees = int(abs_value // 100)
+    minutes = abs_value - degrees * 100
+    decimal = degrees + minutes / 60.0
+    if ddmm_value < 0:
+        decimal *= -1
+    return round_gps(decimal)
+
+
 def decode_gps_value(raw_value: float) -> float:
-    return round_gps(raw_value / GPS_SCALE) if abs(raw_value) > 180 else round_gps(raw_value)
+    restored_ddmm = raw_value / DATA_SCALE
+    return ddmm_to_decimal_degrees(restored_ddmm)
 
 
 def parse_frame(frame_bytes: bytes) -> ParsedFrame:
@@ -292,13 +326,13 @@ def parse_frame(frame_bytes: bytes) -> ParsedFrame:
     values = [parse_float_le(frame_bytes[i:i + 4]) for i in range(0, FRAME_SIZE, 4)]
     alarms = [1 if values[i] >= ALARM_THRESHOLD else 0 for i in range(11, 16)]
     return ParsedFrame(
-        channel_values=[round2(values[i]) for i in range(5)],
-        speed_kmh=round2(values[5]),
-        distance_m=round2(values[6]),
+        channel_values=[decode_scaled_value(values[i]) for i in range(5)],
+        speed_kmh=decode_scaled_value(values[5]),
+        distance_m=decode_scaled_value(values[6]),
         lat=decode_gps_value(values[7]),
         lon=decode_gps_value(values[8]),
-        leak_distance_m=round2(values[9]),
-        uniformity_index=round2(values[10]),
+        leak_distance_m=decode_scaled_value(values[9]),
+        uniformity_index=decode_scaled_value(values[10]),
         alarm_channels=alarms,
         raw_values=values,
         received_at=datetime.now(timezone.utc),
@@ -789,7 +823,17 @@ class SerialIngestAgent:
 
 
 def sample_frame_bytes() -> bytes:
-    return bytes(int(part, 16) for line in SAMPLE_FRAME_HEX_LINES for part in line.split())
+    encoded_values = [
+        *(value * DATA_SCALE for value in SAMPLE_FRAME_VALUES["channels"]),
+        SAMPLE_FRAME_VALUES["speed_kmh"] * DATA_SCALE,
+        SAMPLE_FRAME_VALUES["distance_m"] * DATA_SCALE,
+        SAMPLE_FRAME_VALUES["lat_ddmm"] * DATA_SCALE,
+        SAMPLE_FRAME_VALUES["lon_ddmm"] * DATA_SCALE,
+        SAMPLE_FRAME_VALUES["leak_distance_m"] * DATA_SCALE,
+        SAMPLE_FRAME_VALUES["uniformity_index"] * DATA_SCALE,
+        *(float(value) for value in SAMPLE_FRAME_VALUES["alarm_channels"]),
+    ]
+    return b"".join(struct.pack("<f", value) for value in encoded_values)
 
 
 def run_self_check() -> None:
@@ -820,6 +864,8 @@ def run_self_check() -> None:
     payload = agent._build_payload(frame)
     assert abs(payload["telemetry"]["seed_total_g"] - 121.86) <= 0.05
     assert payload["telemetry"]["alarm_no_seed"] is False
+    assert abs(payload["gps"]["lat"] - 42.829712) <= 0.00001
+    assert abs(payload["gps"]["lon"] - 89.297592) <= 0.00001
     print("[CHECK] 全部通过")
 
 
@@ -839,6 +885,7 @@ def main() -> int:
         return 0
     config = build_config(args)
     setup_logging(config)
+    log_config_summary(config)
     agent = SerialIngestAgent(config, preferred_port=args.port, run_once=args.once, replay_cache=not args.no_cache_replay)
     install_signal_handlers(agent)
     try:

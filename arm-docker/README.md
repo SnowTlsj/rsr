@@ -12,6 +12,27 @@
 - 长时间无有效帧自动结束任务
 - 写心跳文件，便于外部 watchdog 检查
 
+## 串口协议
+
+当前协议固定为 16 个字段，每字段 4 字节，小端 `float`，总长 64 字节。
+
+- 字段 `1~11`
+  单片机发送的是 `原值 * 10000`
+  程序收到后统一 `÷ 10000`
+- 字段 `12~16`
+  报警灯，按 `0/1` 处理，不做缩放
+- GPS 字段
+  单片机发送的是 `ddmm.mmmm * 10000`
+  程序先 `÷ 10000` 恢复成 `ddmm.mmmm`
+  再转换成十进制度，最终保留 6 位小数上传
+
+例如：
+
+- 串口原值 `12472367`
+- 还原后 `1247.2367`
+- 解释为 `12°47.2367'`
+- 最终上传十进制度
+
 ## 配置加载顺序
 
 优先级从高到低：
@@ -34,6 +55,44 @@ cp settings.example.json settings.json
 - `INGEST_TOKEN`
 - `FAILED_CACHE_PATH`
 - `LOG_FILE`
+
+如果你更喜欢环境变量覆盖，也可以只在 `settings.json` 里写基础配置，再用系统环境变量覆盖敏感项。
+
+Linux 例子：
+
+```bash
+export API_HOST=192.168.1.10
+export ADMIN_TOKEN=your_admin_token
+export INGEST_TOKEN=your_ingest_token
+python main.py --config ./settings.json
+```
+
+## 目录结构示例
+
+建议现场目录结构：
+
+```text
+/root/rsr/
+├─ main.py
+├─ settings.json
+├─ .env
+├─ logs/
+│  └─ serial-bridge.log
+├─ data/
+│  └─ serial_cache.jsonl
+├─ runtime/
+│  └─ heartbeat.json
+└─ systemctl/
+   └─ rsr-serial-bridge.service
+```
+
+说明：
+
+- `settings.json` 放基础配置
+- `.env` 只放需要覆盖的敏感环境变量
+- `logs/` 持久化日志
+- `data/` 持久化断网缓存
+- `runtime/` 放心跳与运行态文件
 
 ## 运行方式
 
@@ -91,6 +150,8 @@ sudo systemctl daemon-reload
 sudo systemctl enable rsr-serial-bridge
 sudo systemctl start rsr-serial-bridge
 ```
+
+如果你希望 token 不写在 `settings.json`，建议配合 `EnvironmentFile` 使用。
 
 ## 日志与缓存
 

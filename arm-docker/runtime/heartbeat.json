@@ -1,10 +1,10 @@
 {
-  "ts": "2026-03-17T06:31:47.023840+00:00",
-  "state": "running",
-  "current_port": "COM4",
-  "current_run_id": "25d139ea-4cf0-424f-b90d-4f06950df9fc",
-  "last_valid_frame_at": 1773729106.4552999,
-  "parsed_frames": 1768,
+  "ts": "2026-03-17T08:10:43.569597+00:00",
+  "state": "waiting_port",
+  "current_port": null,
+  "current_run_id": null,
+  "last_valid_frame_at": 0.0,
+  "parsed_frames": 0,
   "validation_failures": 0,
   "cache_backlog": 0,
   "upload_failures": 0

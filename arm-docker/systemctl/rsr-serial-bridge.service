@@ -6,6 +6,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/root/rsr
+EnvironmentFile=-/root/rsr/.env
 ExecStart=/usr/bin/python3 /root/rsr/main.py --config /root/rsr/settings.json
 Restart=always
 RestartSec=3

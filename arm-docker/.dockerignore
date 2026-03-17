@@ -1,0 +1,7 @@
+__pycache__/
+.pytest_cache/
+tests/
+logs/
+runtime/
+data/
+settings.json

@@ -19,7 +19,14 @@ def test_parse_frame_sample():
     frame = main.parse_frame(main.sample_frame_bytes())
     assert frame.channel_values == [23.22, 24.53, 26.17, 23.91, 24.03]
     assert frame.distance_m == 10.01
+    assert abs(frame.lat - 42.829713) <= 0.000001
+    assert abs(frame.lon - 89.297592) <= 0.00001
     assert frame.alarm_channels == [0, 0, 0, 0, 0]
+
+
+def test_ddmm_to_decimal_degrees():
+    assert main.ddmm_to_decimal_degrees(1247.2367) == 12.787278
+    assert main.ddmm_to_decimal_degrees(4249.78272) == 42.829712
 
 
 def test_assembler_half_packet():
@@ -42,4 +49,5 @@ def test_payload_mapping():
     agent = main.SerialIngestAgent(cfg, replay_cache=False)
     payload = agent._build_payload(main.parse_frame(main.sample_frame_bytes()))
     assert payload["telemetry"]["seed_total_g"] == 121.86
-    assert payload["gps"]["lat"] == 42.829712
+    assert abs(payload["gps"]["lat"] - 42.829713) <= 0.000001
+    assert abs(payload["gps"]["lon"] - 89.297592) <= 0.00001
