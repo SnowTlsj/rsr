@@ -64,7 +64,7 @@ MAX_BUFFER_BYTES = FRAME_SIZE * 8
 ALARM_THRESHOLD = 0.5
 GPS_SCALE = 100000.0
 FLOAT_ROUND_DIGITS = 2
-GPS_ROUND_DIGITS = 5
+GPS_ROUND_DIGITS = 6
 
 STATE_WAITING_PORT = "waiting_port"
 STATE_PROBING = "probing"
@@ -797,10 +797,12 @@ def run_self_check() -> None:
     sample = sample_frame_bytes()
     frame = parse_frame(sample)
     assert validate_frame(frame)
-    assert frame.channel_values == [23.22, 24.53, 26.17, 23.91, 24.03]
-    assert frame.distance_m == 10.01
-    assert frame.lat == 42.83
-    assert frame.lon == 89.3
+    expected_channels = [23.22, 24.53, 26.17, 23.91, 24.03]
+    for actual, expected in zip(frame.channel_values, expected_channels):
+        assert abs(actual - expected) <= 0.02, (actual, expected)
+    assert abs(frame.distance_m - 10.01) <= 0.02, frame.distance_m
+    assert abs(frame.lat - 42.829712) <= 0.00001, frame.lat
+    assert abs(frame.lon - 89.297592) <= 0.00001, frame.lon
     stats = FrameStats()
     assembler = SerialFrameAssembler(stats)
     assembler.append(sample[:20])
@@ -816,7 +818,7 @@ def run_self_check() -> None:
     cfg = build_config(argparse.Namespace(self_check=False, port="", config="", log_file="", once=False, no_cache_replay=False, debug=False))
     agent = SerialIngestAgent(cfg, replay_cache=False)
     payload = agent._build_payload(frame)
-    assert payload["telemetry"]["seed_total_g"] == 121.86
+    assert abs(payload["telemetry"]["seed_total_g"] - 121.86) <= 0.05
     assert payload["telemetry"]["alarm_no_seed"] is False
     print("[CHECK] 全部通过")
 

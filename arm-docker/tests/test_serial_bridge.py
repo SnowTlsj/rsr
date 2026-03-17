@@ -1,11 +1,13 @@
 from pathlib import Path
 import importlib.util
+import sys
 
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "main.py"
 SPEC = importlib.util.spec_from_file_location("serial_bridge_main", MODULE_PATH)
 main = importlib.util.module_from_spec(SPEC)
 assert SPEC and SPEC.loader
+sys.modules[SPEC.name] = main
 SPEC.loader.exec_module(main)
 
 
@@ -40,4 +42,4 @@ def test_payload_mapping():
     agent = main.SerialIngestAgent(cfg, replay_cache=False)
     payload = agent._build_payload(main.parse_frame(main.sample_frame_bytes()))
     assert payload["telemetry"]["seed_total_g"] == 121.86
-    assert payload["gps"]["lat"] == 42.83
+    assert payload["gps"]["lat"] == 42.829712

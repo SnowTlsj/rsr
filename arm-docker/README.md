@@ -120,7 +120,7 @@ python main.py --self-check
 pytest：
 
 ```bash
-pytest -q
+python -m pytest -q
 ```
 
 ## 状态机
